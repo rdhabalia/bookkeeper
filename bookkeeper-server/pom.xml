@@ -44,6 +44,16 @@
       <scope>compile</scope>
     </dependency>
     <dependency>
+      <groupId>org.fusesource.leveldbjni</groupId>
+      <artifactId>leveldbjni-all</artifactId>
+      <version>1.8</version>
+    </dependency>
+    <dependency>
+      <groupId>org.rocksdb</groupId>
+      <artifactId>rocksdbjni</artifactId>
+      <version>4.5.1</version>
+    </dependency>
+    <dependency>
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
       <version>${guava.version}</version>
@@ -348,6 +358,10 @@
                     <exec executable="protoc" failonerror="true">
                       <arg value="--java_out=src/test/java" />
                       <arg value="src/test/proto/TestDataFormats.proto" />
+                    </exec>
+                    <exec executable="protoc" failonerror="true">
+                      <arg value="--java_out=src/main/java" />
+                      <arg value="src/main/proto/DbLedgerStorageDataFormats.proto" />
                     </exec>
                   </target>
                 </configuration>

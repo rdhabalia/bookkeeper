@@ -119,7 +119,7 @@ public class GarbageCollectorThread extends SafeRunnable {
 
         /**
          * Get an iterator over a range of ledger ids stored in the bookie.
-         * 
+         *
          * @param firstLedgerId first ledger id in the sequence (included)
          * @param lastLedgerId last ledger id in the sequence (not included)
          * @return
@@ -129,7 +129,7 @@ public class GarbageCollectorThread extends SafeRunnable {
 
         /**
          * Update the location of several entries and sync the underlying storage
-         * 
+         *
          * @param locations
          *            the list of locations to update
          * @throws IOException

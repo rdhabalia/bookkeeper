@@ -22,7 +22,6 @@
 package org.apache.bookkeeper.bookie;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 
 import java.io.File;
 import java.io.IOException;
@@ -104,7 +103,7 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
     private OpStatsLogger getOffsetStats;
     private OpStatsLogger getEntryStats;
 
-    InterleavedLedgerStorage() {
+    public InterleavedLedgerStorage() {
         activeLedgers = new SnapshotMap<Long, Boolean>();
     }
 

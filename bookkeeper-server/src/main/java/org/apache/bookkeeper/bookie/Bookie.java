@@ -494,14 +494,15 @@ public class Bookie extends BookieCriticalThread {
 
         CheckpointSource checkpointSource = new CheckpointSourceList(journals);
 
+        String ledgerStorageClass = conf.getLedgerStorageClass();
         // Check the type of storage.
-        if (conf.getSortedLedgerStorageEnabled()) {
+        if (ledgerStorageClass.equals(InterleavedLedgerStorage.class.getName())
+            && conf.getSortedLedgerStorageEnabled()) {
             ledgerStorage = new SortedLedgerStorage();
             ledgerStorage.initialize(conf, new GarbageCollectorThread.LedgerManagerProviderImpl(conf),
                                      ledgerDirsManager, indexDirsManager,
                                      checkpointSource, statsLogger);
         } else {
-            String ledgerStorageClass = conf.getLedgerStorageClass();
             LOG.info("using ledger storage: {}", ledgerStorageClass);
             ledgerStorage = LedgerStorageFactory.createLedgerStorage(ledgerStorageClass);
             ledgerStorage.initialize(conf, new GarbageCollectorThread.LedgerManagerProviderImpl(conf),
@@ -1067,6 +1068,11 @@ public class Bookie extends BookieCriticalThread {
         ByteBuf entry = handle.readEntry(entryId);
         readBytes.add(entry.readableBytes());
         return entry;
+    }
+
+    @VisibleForTesting
+    public LedgerStorage getLedgerStorage() {
+        return ledgerStorage;
     }
 
     // The rest of the code is test stuff
