@@ -13,6 +13,7 @@ import org.apache.commons.configuration.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.carrotsearch.hppc.IntArrayList;
 import com.google.common.collect.Lists;
 
 /**
@@ -66,6 +67,11 @@ public class LocalBookieEnsemblePlacementPolicy implements EnsemblePlacementPoli
             Set<BookieSocketAddress> currentEnsemble, Set<BookieSocketAddress> excludeBookies)
             throws BKNotEnoughBookiesException {
         throw new BKNotEnoughBookiesException();
+    }
+
+    @Override
+    public IntArrayList reorderReadSequence(ArrayList<BookieSocketAddress> ensemble, IntArrayList writeSet) {
+        return writeSet;
     }
 
 }

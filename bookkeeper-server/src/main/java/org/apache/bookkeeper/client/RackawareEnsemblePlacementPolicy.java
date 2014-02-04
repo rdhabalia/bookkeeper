@@ -41,6 +41,7 @@ import org.apache.commons.configuration.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.carrotsearch.hppc.IntArrayList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 
@@ -336,8 +337,9 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
             bn = null;
         }
         localNode = bn;
-        LOG.info("Initialize rackaware ensemble placement policy @ {} : {}.", localNode,
-                dnsResolver.getClass().getName());
+        LOG.info("Initialize rackaware ensemble placement policy @ {} @ {} : {}.",
+                 new Object[] { localNode, null == localNode ? "Unknown" : localNode.getNetworkLocation(),
+                         dnsResolver.getClass().getName() });
         return this;
     }
 
@@ -634,5 +636,10 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
         } finally {
             rwLock.writeLock().unlock();
         }
+    }
+
+    @Override
+    public IntArrayList reorderReadSequence(ArrayList<BookieSocketAddress> ensemble, IntArrayList writeSet) {
+        return writeSet;
     }
 }

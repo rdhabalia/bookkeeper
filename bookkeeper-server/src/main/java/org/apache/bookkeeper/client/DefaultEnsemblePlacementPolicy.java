@@ -27,6 +27,8 @@ import org.apache.bookkeeper.client.BKException.BKNotEnoughBookiesException;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.commons.configuration.Configuration;
 
+import com.carrotsearch.hppc.IntArrayList;
+
 /**
  * Default Ensemble Placement Policy, which picks bookies randomly
  */
@@ -80,6 +82,11 @@ public class DefaultEnsemblePlacementPolicy implements EnsemblePlacementPolicy {
         deadBookies.removeAll(readOnlyBookies);
         knownBookies = writableBookies;
         return deadBookies;
+    }
+
+    @Override
+    public IntArrayList reorderReadSequence(ArrayList<BookieSocketAddress> ensemble, IntArrayList writeSet) {
+        return writeSet;
     }
 
     @Override
