@@ -301,6 +301,7 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
     private final Map<BookieSocketAddress, BookieNode> knownBookies;
     private BookieNode localNode;
     private final ReentrantReadWriteLock rwLock;
+    protected ImmutableSet<BookieSocketAddress> readOnlyBookies = null;
 
     public RackawareEnsemblePlacementPolicy() {
         topology = new NetworkTopology();
@@ -401,6 +402,10 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Cluster changed : bookie {} joined the cluster.", addr);
                 }
+            }
+
+            if (!readOnlyBookies.isEmpty()) {
+                this.readOnlyBookies = ImmutableSet.copyOf(readOnlyBookies);
             }
 
             return deadBookies;
@@ -640,6 +645,19 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
 
     @Override
     public IntArrayList reorderReadSequence(ArrayList<BookieSocketAddress> ensemble, IntArrayList writeSet) {
-        return writeSet;
+        IntArrayList finalList = new IntArrayList(writeSet.size());
+        IntArrayList unAvailableList = new IntArrayList(writeSet.size());
+        for (int idx : writeSet.buffer) {
+            BookieSocketAddress address = ensemble.get(idx);
+            if (null == knownBookies.get(address) &&
+                ((null == readOnlyBookies) || !readOnlyBookies.contains(address))) {
+                unAvailableList.add(idx);
+            } else {
+                finalList.add(idx);
+            }
+        }
+
+        finalList.addAll(unAvailableList);
+        return finalList;
     }
 }
