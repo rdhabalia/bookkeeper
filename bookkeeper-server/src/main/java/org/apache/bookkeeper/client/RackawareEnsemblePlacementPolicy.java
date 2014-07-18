@@ -42,6 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.procedures.IntProcedure;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 
@@ -646,17 +647,29 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
     @Override
     public IntArrayList reorderReadSequence(ArrayList<BookieSocketAddress> ensemble, IntArrayList writeSet) {
         IntArrayList finalList = new IntArrayList(writeSet.size());
+        IntArrayList readOnlyList = new IntArrayList(writeSet.size());
         IntArrayList unAvailableList = new IntArrayList(writeSet.size());
-        for (int idx : writeSet.buffer) {
-            BookieSocketAddress address = ensemble.get(idx);
-            if (null == knownBookies.get(address) &&
-                ((null == readOnlyBookies) || !readOnlyBookies.contains(address))) {
-                unAvailableList.add(idx);
-            } else {
-                finalList.add(idx);
-            }
-        }
+        writeSet.forEach(new IntProcedure() {
 
+            @Override
+            public void apply(int idx) {
+                BookieSocketAddress address = ensemble.get(idx);
+                if (null == knownBookies.get(address)) {
+                    // there isn't too much differences between readonly bookies from unavailable bookies. since there
+                    // is no write requests to them, so we shouldn't try reading from readonly bookie in prior to
+                    // writable
+                    // bookies.
+                    if ((null == readOnlyBookies) || !readOnlyBookies.contains(address)) {
+                        unAvailableList.add(idx);
+                    } else {
+                        readOnlyList.add(idx);
+                    }
+                } else {
+                    finalList.add(idx);
+                }
+            }
+        });
+        finalList.addAll(readOnlyList);
         finalList.addAll(unAvailableList);
         return finalList;
     }
