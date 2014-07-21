@@ -79,6 +79,8 @@ import org.apache.zookeeper.ZooKeeper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.collect.Lists;
+
 /**
  * Bookie Shell is to provide utilities for users to administer a bookkeeper cluster.
  */
@@ -109,10 +111,10 @@ public class BookieShell implements Tool {
     final ServerConfiguration bkConf = new ServerConfiguration();
     File[] indexDirectories;
     File[] ledgerDirectories;
-    File journalDirectory;
+    File[] journalDirectories;
 
     EntryLogger entryLogger = null;
-    Journal journal = null;
+    List<Journal> journals = null;
     EntryFormatter formatter;
 
     int pageSize;
@@ -723,6 +725,7 @@ public class BookieShell implements Tool {
 
         ReadJournalCmd() {
             super(CMD_READJOURNAL);
+            rjOpts.addOption("dir", false, "Journal directory (needed if more than one journal configured)");
             rjOpts.addOption("m", "msg", false, "Print message body");
         }
 
@@ -739,6 +742,32 @@ public class BookieShell implements Tool {
             if (cmdLine.hasOption("m")) {
                 printMsg = true;
             }
+
+            Journal journal = null;
+            if (getJournals().size() > 1) {
+                if (!cmdLine.hasOption("dir")) {
+                    System.err.println("ERROR: missing journal directory");
+                    printUsage();
+                    return -1;
+                }
+
+                File journalDir = new File(cmdLine.getOptionValue("dir"));
+                for (Journal j : getJournals()) {
+                    if (j.getJournalDirectory().equals(journalDir)) {
+                        journal = j;
+                        break;
+                    }
+                }
+
+                if (journal == null) {
+                    System.err.println("ERROR: journal directory not found");
+                    printUsage();
+                    return -1;
+                }
+            } else {
+                journal = getJournals().get(0);
+            }
+
             long journalId;
             try {
                 journalId = Long.parseLong(leftArgs[0]);
@@ -756,7 +785,7 @@ public class BookieShell implements Tool {
                 journalId = Long.parseLong(idString, 16);
             }
             // scan journal
-            scanJournal(journalId, printMsg);
+            scanJournal(journal, journalId, printMsg);
             return 0;
         }
 
@@ -1109,7 +1138,7 @@ public class BookieShell implements Tool {
                     return -1;
                 }
                 Cookie newCookie = Cookie.newBuilder(oldCookie.getValue()).setBookieHost(newBookieId).build();
-                boolean hasCookieUpdatedInDirs = verifyCookie(newCookie, journalDirectory);
+                boolean hasCookieUpdatedInDirs = verifyCookie(newCookie, journalDirectories[0]);
                 for (File dir : ledgerDirectories) {
                     hasCookieUpdatedInDirs &= verifyCookie(newCookie, dir);
                 }
@@ -1132,8 +1161,11 @@ public class BookieShell implements Tool {
                     }
                 } else {
                     // writes newcookie to local dirs
-                    newCookie.writeToDirectory(journalDirectory);
-                    LOG.info("Updated cookie file present in journalDirectory {}", journalDirectory);
+                    for (File journalDirectory : journalDirectories) {
+                        newCookie.writeToDirectory(journalDirectory);
+                        LOG.info("Updated cookie file present in journalDirectory {}", journalDirectory);
+                    }
+
                     for (File dir : ledgerDirectories) {
                         newCookie.writeToDirectory(dir);
                     }
@@ -1319,7 +1351,7 @@ public class BookieShell implements Tool {
     @Override
     public void setConf(Configuration conf) throws Exception {
         bkConf.loadConf(conf);
-        journalDirectory = Bookie.getCurrentDirectory(bkConf.getJournalDir());
+        journalDirectories = Bookie.getCurrentDirectories(bkConf.getJournalDirs());
         ledgerDirectories = Bookie.getCurrentDirectories(bkConf.getLedgerDirs());
         if (null == bkConf.getIndexDirs()) {
             indexDirectories = ledgerDirectories;
@@ -1454,11 +1486,14 @@ public class BookieShell implements Tool {
         entryLogger.scanEntryLog(logId, scanner);
     }
 
-    private synchronized Journal getJournal() throws IOException {
-        if (null == journal) {
-            journal = new Journal(bkConf, new LedgerDirsManager(bkConf, bkConf.getLedgerDirs()));
+    private synchronized List<Journal> getJournals() throws IOException {
+        if (null == journals) {
+            journals = Lists.newArrayListWithCapacity(bkConf.getJournalDirNames().length);
+            for (File journalDir : bkConf.getJournalDirs()) {
+                journals.add(new Journal(journalDir, bkConf, new LedgerDirsManager(bkConf, bkConf.getLedgerDirs())));
+            }
         }
-        return journal;
+        return journals;
     }
 
     /**
@@ -1469,8 +1504,8 @@ public class BookieShell implements Tool {
      * @param scanner
      *          Journal File Scanner
      */
-    protected void scanJournal(long journalId, JournalScanner scanner) throws IOException {
-        getJournal().scanJournal(journalId, 0L, scanner);
+    protected void scanJournal(Journal journal, long journalId, JournalScanner scanner) throws IOException {
+        journal.scanJournal(journalId, 0L, scanner);
     }
 
     ///
@@ -1579,9 +1614,9 @@ public class BookieShell implements Tool {
      * @param printMsg
      *          Whether printing the entry data.
      */
-    protected void scanJournal(long journalId, final boolean printMsg) throws Exception {
+    protected void scanJournal(Journal journal, long journalId, final boolean printMsg) throws Exception {
         System.out.println("Scan journal " + journalId + " (" + Long.toHexString(journalId) + ".txn)");
-        scanJournal(journalId, new JournalScanner() {
+        scanJournal(journal, journalId, new JournalScanner() {
             boolean printJournalVersion = false;
             @Override
             public void process(int journalVersion, long offset, ByteBuffer entry) throws IOException {
@@ -1598,10 +1633,11 @@ public class BookieShell implements Tool {
      * Print last log mark
      */
     protected void printLastLogMark() throws IOException {
-        LogMark lastLogMark = getJournal().getLastLogMark().getCurMark();
-        System.out.println("LastLogMark: Journal Id - " + lastLogMark.getLogFileId() + "("
-                + Long.toHexString(lastLogMark.getLogFileId()) + ".txn), Pos - "
-                + lastLogMark.getLogFileOffset());
+        for (Journal journal : getJournals()) {
+            LogMark lastLogMark = journal.getLastLogMark().getCurMark();
+            System.out.println(journal.getJournalDirectory() + " - LastLogMark: Journal Id - " + lastLogMark.getLogFileId() + "("
+                    + Long.toHexString(lastLogMark.getLogFileId()) + ".txn), Pos - " + lastLogMark.getLogFileOffset());
+        }
     }
 
     /**
