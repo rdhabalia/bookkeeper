@@ -639,7 +639,13 @@ public class Bookie extends BookieCriticalThread {
         // if setting it in bookie thread, the watcher might run before bookie thread.
         running = true;
         try {
-            Future<Void> f = registrar.register();
+            Future<Void> f;
+            if (conf.isForceReadOnlyBookie() && conf.isReadOnlyModeEnabled()) {
+                readOnly.set(true);
+                f = registrar.registerReadOnly();
+            } else {
+                f = registrar.register();
+            }
             f.get();
         } catch (ExecutionException ee) {
             LOG.error("Couldn't register bookie with zookeeper, shutting down", ee.getCause());
@@ -765,6 +771,9 @@ public class Bookie extends BookieCriticalThread {
      */
     @VisibleForTesting
     public void transitionToWritableMode() {
+        if (conf.isForceReadOnlyBookie() && conf.isReadOnlyModeEnabled()) {
+            return;
+        }
         if (!readOnly.compareAndSet(true, false)) {
             return;
         }
