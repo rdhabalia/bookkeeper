@@ -100,7 +100,11 @@ public class LedgerHandle {
 
         this.ledgerId = ledgerId;
 
-        this.throttler = RateLimiter.create(bk.getConf().getThrottleValue());
+        if (bk.getConf().getThrottleValue() > 0) { 
+            this.throttler = RateLimiter.create(bk.getConf().getThrottleValue());
+        } else {
+            this.throttler = null;
+        }
 
         macManager = DigestManager.instantiate(ledgerId, password, digestType);
         this.ledgerKey = MacDigestManager.genDigest("ledger", password);
@@ -546,7 +550,10 @@ public class LedgerHandle {
                 "Invalid values for offset("+offset
                 +") or length("+length+")");
         }
-        throttler.acquire();
+
+        if (throttler != null) {
+            throttler.acquire();
+        }
 
         final long entryId;
         final long currentLength;
