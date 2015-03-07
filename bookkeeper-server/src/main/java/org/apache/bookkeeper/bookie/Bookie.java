@@ -32,8 +32,6 @@ import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -60,6 +58,7 @@ import org.apache.bookkeeper.util.BookKeeperConstants;
 import org.apache.bookkeeper.util.IOUtils;
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.ZkUtils;
+import org.apache.bookkeeper.util.collections.ConcurrentLongHashMap;
 import org.apache.bookkeeper.versioning.Version;
 import org.apache.bookkeeper.versioning.Versioned;
 import org.apache.bookkeeper.zookeeper.ZooKeeperWatcherBase;
@@ -116,7 +115,7 @@ public class Bookie extends BookieCriticalThread {
     BookieBean jmxBookieBean;
     BKMBeanInfo jmxLedgerStorageBean;
 
-    final ConcurrentMap<Long, byte[]> masterKeyCache = new ConcurrentHashMap<Long, byte[]>();
+    private final ConcurrentLongHashMap<byte[]> masterKeyCache = new ConcurrentLongHashMap<>();
 
     final protected Registrar registrar;
 
@@ -297,7 +296,7 @@ public class Bookie extends BookieCriticalThread {
             boolean newEnv = false;
             List<File> missedCookieDirs = new ArrayList<File>();
             List<Cookie> journalCookies = Lists.newArrayList();
-            
+
             // try to read cookie from journal directory
             for (File journalDirectory : journalDirectories) {
                 try {
@@ -315,7 +314,7 @@ public class Bookie extends BookieCriticalThread {
                     missedCookieDirs.add(journalDirectory);
                 }
             }
-            
+
             String instanceId = getInstanceId(zk);
             Cookie.Builder builder = Cookie.generateCookie(conf);
             if (null != instanceId) {
@@ -482,7 +481,7 @@ public class Bookie extends BookieCriticalThread {
         // configured directories. When disk errors or all the ledger
         // directories are full, would throws exception and fail bookie startup.
         this.ledgerDirsManager.init();
-        
+
         // instantiate the journals
         if (journalDirectories.size() == 1) {
             journals = Lists.newArrayList(new Journal(journalDirectories.get(0), conf, ledgerDirsManager, statsLogger
@@ -494,7 +493,7 @@ public class Bookie extends BookieCriticalThread {
                         .scope(JOURNAL_SCOPE + "-" + idx)));
             }
         }
-        
+
         CheckpointSource checkpointSource = new CheckpointSourceList(journals);
 
         // Check the type of storage.
@@ -594,7 +593,7 @@ public class Bookie extends BookieCriticalThread {
                 }
             }
         };
-        
+
         for (Journal journal : journals) {
             journal.replay(scanner);
         }
@@ -942,23 +941,26 @@ public class Bookie extends BookieCriticalThread {
      *
      * @throws BookieException if masterKey does not match the master key of the ledger
      */
-    private LedgerDescriptor getLedgerForEntry(ByteBuffer entry, byte[] masterKey)
+    private LedgerDescriptor getLedgerForEntry(ByteBuffer entry, final byte[] masterKey)
             throws IOException, BookieException {
-        long ledgerId = entry.getLong();
+        final long ledgerId = entry.getLong();
         LedgerDescriptor l = handles.getHandle(ledgerId, masterKey);
-        if (!masterKeyCache.containsKey(ledgerId)) {
-            // new handle, we should add the key to journal ensure we can rebuild
-            ByteBuffer bb = ByteBuffer.allocate(8 + 8 + 4 + masterKey.length);
-            bb.putLong(ledgerId);
-            bb.putLong(METAENTRY_ID_LEDGER_KEY);
-            bb.putInt(masterKey.length);
-            bb.put(masterKey);
-            bb.flip();
+        if (masterKeyCache.get(ledgerId) == null) {
+            // Force the load into masterKey cache
+            byte[] oldValue = masterKeyCache.putIfAbsent(ledgerId, masterKey);
+            if (oldValue == null) {
+                // new handle, we should add the key to journal ensure we can rebuild
+                ByteBuffer bb = ByteBuffer.allocate(8 + 8 + 4 + masterKey.length);
+                bb.putLong(ledgerId);
+                bb.putLong(METAENTRY_ID_LEDGER_KEY);
+                bb.putInt(masterKey.length);
+                bb.put(masterKey);
+                bb.flip();
 
-            if (null == masterKeyCache.putIfAbsent(ledgerId, masterKey)) {
                 getJournal(ledgerId).logAddEntry(bb, new NopWriteCallback(), null);
             }
         }
+
         return l;
     }
 
@@ -1198,7 +1200,7 @@ public class Bookie extends BookieCriticalThread {
     public int getExitCode() {
         return exitCode;
     }
-    
+
     Journal getJournal(long ledgerId) {
         return journals.get(MathUtils.signSafeMod(ledgerId, journals.size()));
     }
