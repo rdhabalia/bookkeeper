@@ -23,6 +23,7 @@ package org.apache.bookkeeper.proto;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.util.ReferenceCounted;
 
 import org.apache.bookkeeper.proto.BookkeeperProtocol.AuthMessage;
 
@@ -338,7 +339,7 @@ public interface BookieProtocol {
         }
     }
 
-    static class ReadResponse extends Response {
+    static class ReadResponse extends Response implements ReferenceCounted {
         final ByteBuf data;
 
         ReadResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId) {
@@ -349,6 +350,7 @@ public interface BookieProtocol {
         ReadResponse(byte protocolVersion, int errorCode, long ledgerId, long entryId, ByteBuf data) {
             super(protocolVersion, READENTRY, errorCode, ledgerId, entryId);
             this.data = data;
+            retain();
         }
 
         boolean hasData() {
@@ -357,6 +359,33 @@ public interface BookieProtocol {
 
         ByteBuf getData() {
             return data;
+        }
+
+        @Override
+        public int refCnt() {
+            return data != null ? data.refCnt() : 0;
+        }
+
+        @Override
+        public ReferenceCounted retain() {
+            data.retain();
+            return this;
+        }
+
+        @Override
+        public ReferenceCounted retain(int increment) {
+            data.retain(increment);
+            return this;
+        }
+
+        @Override
+        public boolean release() {
+            return data.release();
+        }
+
+        @Override
+        public boolean release(int decrement) {
+            return data.release(decrement);
         }
     }
 
