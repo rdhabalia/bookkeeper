@@ -104,7 +104,7 @@ public class LedgerHandle {
 
         this.ledgerId = ledgerId;
 
-        if (bk.getConf().getThrottleValue() > 0) { 
+        if (bk.getConf().getThrottleValue() > 0) {
             this.throttler = RateLimiter.create(bk.getConf().getThrottleValue());
         } else {
             this.throttler = null;
@@ -224,7 +224,9 @@ public class LedgerHandle {
     }
 
     void writeLedgerConfig(GenericCallback<Void> writeCb) {
-        LOG.debug("Writing metadata to ledger manager: {}, {}", this.ledgerId, metadata.getVersion());
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Writing metadata to ledger manager: {}, {}", this.ledgerId, metadata.getVersion());
+        }
 
         bk.getLedgerManager().writeLedgerMetadata(ledgerId, metadata, writeCb);
     }
@@ -273,7 +275,9 @@ public class LedgerHandle {
         try {
             doAsyncCloseInternal(cb, ctx, rc);
         } catch (RejectedExecutionException re) {
-            LOG.debug("Failed to close ledger {} : ", ledgerId, re);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Failed to close ledger {} : ", ledgerId, re);
+            }
             errorOutPendingAdds(bk.getReturnRc(rc));
             cb.closeComplete(bk.getReturnRc(BKException.Code.InterruptedException), this, ctx);
         }
