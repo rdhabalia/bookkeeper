@@ -622,7 +622,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
     }
 
     void errorOutReadKey(final CompletionKey key, final int rc) {
-        LOG.info("Removing completion key: {}", key);
+        LOG.debug("Removing completion key: {}", key);
         ReadCompletion completion = (ReadCompletion) completionObjects.remove(key);
 
         if (null == completion) {
