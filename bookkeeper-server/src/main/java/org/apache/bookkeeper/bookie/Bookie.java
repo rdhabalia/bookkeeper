@@ -941,7 +941,9 @@ public class Bookie extends BookieCriticalThread {
      */
     private LedgerDescriptor getLedgerForEntry(ByteBuf entry, final byte[] masterKey)
             throws IOException, BookieException {
-        final long ledgerId = entry.readLong();
+        // Read ledgerId without moving reader index
+        final long ledgerId = entry.getLong(entry.readerIndex());
+
         LedgerDescriptor l = handles.getHandle(ledgerId, masterKey);
         if (masterKeyCache.get(ledgerId) == null) {
             // Force the load into masterKey cache
@@ -968,7 +970,6 @@ public class Bookie extends BookieCriticalThread {
     private void addEntryInternal(LedgerDescriptor handle, ByteBuf entry, WriteCallback cb, Object ctx)
             throws IOException, BookieException {
         long ledgerId = handle.getLedgerId();
-        entry.resetReaderIndex();
         long entryId = handle.addEntry(entry);
 
         writeBytes.add(entry.readableBytes());
