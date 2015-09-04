@@ -414,7 +414,7 @@ public class BookieProtoEncoding {
                 }
             } catch (Exception e) {
                 LOG.error("Failed to decode a request from {} : ", ctx.channel(), e);
-                throw e;
+                ctx.close();
             }
         }
     }
@@ -484,7 +484,7 @@ public class BookieProtoEncoding {
                 }
             } catch (Exception e) {
                 LOG.error("Failed to decode a response from channel {} : ", ctx.channel(), e);
-                throw e;
+                ctx.close();
             }
         }
     }
