@@ -455,12 +455,15 @@ public class LedgerHandle {
     public void asyncReadEntries(long firstEntry, long lastEntry,
                                  ReadCallback cb, Object ctx) {
         // Little sanity check
-        if (firstEntry < 0 || lastEntry > lastAddConfirmed
-                || firstEntry > lastEntry) {
+        if (firstEntry < 0 || lastEntry > lastAddConfirmed || firstEntry > lastEntry) {
             cb.readComplete(BKException.Code.ReadException, this, null, ctx);
             return;
         }
 
+        asyncReadEntriesInternal(firstEntry, lastEntry, cb, ctx);
+    }
+
+    void asyncReadEntriesInternal(long firstEntry, long lastEntry, ReadCallback cb, Object ctx) {
         try {
             new PendingReadOp(this, bk.scheduler,
                               firstEntry, lastEntry, cb, ctx).initiate();
@@ -1167,7 +1170,7 @@ public class LedgerHandle {
         }
     }
 
-    private static class SyncReadCallback implements ReadCallback {
+    static class SyncReadCallback implements ReadCallback {
         /**
          * Implementation of callback interface for synchronous read method.
          *
@@ -1194,7 +1197,7 @@ public class LedgerHandle {
         }
     }
 
-    private static class SyncAddCallback implements AddCallback {
+    static class SyncAddCallback implements AddCallback {
         long entryId = -1;
 
         /**
@@ -1219,7 +1222,7 @@ public class LedgerHandle {
         }
     }
 
-    private static class SyncReadLastConfirmedCallback implements ReadLastConfirmedCallback {
+    static class SyncReadLastConfirmedCallback implements ReadLastConfirmedCallback {
         /**
          * Implementation of  callback interface for synchronous read last confirmed method.
          */
@@ -1235,7 +1238,7 @@ public class LedgerHandle {
         }
     }
 
-    private static class SyncCloseCallback implements CloseCallback {
+    static class SyncCloseCallback implements CloseCallback {
         /**
          * Close callback method
          *
