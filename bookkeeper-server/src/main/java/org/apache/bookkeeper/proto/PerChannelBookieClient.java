@@ -1348,6 +1348,9 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
             case EFENCED:
                 rcToRet = BKException.Code.LedgerFencedException;
                 break;
+            case EREADONLY:
+                rcToRet = BKException.Code.WriteOnReadOnlyBookieException;
+                break;
             default:
                 break;
         }
