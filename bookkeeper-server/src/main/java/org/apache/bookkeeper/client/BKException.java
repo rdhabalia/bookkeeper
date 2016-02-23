@@ -88,6 +88,8 @@ public abstract class BKException extends Exception {
             return new BKUnclosedFragmentException();
         case Code.WriteOnReadOnlyBookieException:
             return new BKWriteOnReadOnlyBookieException();
+        case Code.TooManyRequestsException:
+            return new BKTooManyRequestsException();
         case Code.ReplicationException:
             return new BKReplicationException();
         case Code.ClientClosedException:
@@ -133,6 +135,7 @@ public abstract class BKException extends Exception {
         int UnauthorizedAccessException = -102;
         int UnclosedFragmentException = -103;
         int WriteOnReadOnlyBookieException = -104;
+        int TooManyRequestsException = -105;
 
         // generic exception code used to propagate in replication pipeline
         int ReplicationException = -200;
@@ -197,6 +200,8 @@ public abstract class BKException extends Exception {
             return "Attempting to use an unclosed fragment; This is not safe";
         case Code.WriteOnReadOnlyBookieException:
             return "Attempting to write on ReadOnly bookie";
+        case Code.TooManyRequestsException:
+            return "Too many concurrent requests on bookie";
         case Code.ReplicationException:
             return "Errors in replication pipeline";
         case Code.ClientClosedException:
@@ -351,6 +356,12 @@ public abstract class BKException extends Exception {
     public static class BKWriteOnReadOnlyBookieException extends BKException {
         public BKWriteOnReadOnlyBookieException() {
             super(Code.WriteOnReadOnlyBookieException);
+        }
+    }
+
+    public static class BKTooManyRequestsException extends BKException {
+        public BKTooManyRequestsException() {
+            super(Code.TooManyRequestsException);
         }
     }
 
