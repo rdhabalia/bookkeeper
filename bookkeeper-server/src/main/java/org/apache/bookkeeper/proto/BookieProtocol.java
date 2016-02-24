@@ -179,7 +179,7 @@ public interface BookieProtocol {
 
     public static final short FLAG_NONE = 0x0;
     public static final short FLAG_DO_FENCING = 0x0001;
-    public static final short FLAG_RECOVERY_ADD = 0x0002;
+    public static final short FLAG_RECOVERY = 0x0002;
 
     static class Request {
         byte protocolVersion;
@@ -255,7 +255,7 @@ public interface BookieProtocol {
         }
 
         boolean isRecoveryAdd() {
-            return (flags & FLAG_RECOVERY_ADD) == FLAG_RECOVERY_ADD;
+            return (flags & FLAG_RECOVERY) == FLAG_RECOVERY;
         }
 
         void release() {
@@ -283,10 +283,6 @@ public interface BookieProtocol {
     }
 
     static class ReadRequest extends Request {
-        ReadRequest(byte protocolVersion, long ledgerId, long entryId, short flags) {
-            init(protocolVersion, READENTRY, ledgerId, entryId, flags, null);
-        }
-
         ReadRequest(byte protocolVersion, long ledgerId, long entryId,
                     short flags, byte[] masterKey) {
             init(protocolVersion, READENTRY, ledgerId, entryId, flags, masterKey);

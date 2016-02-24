@@ -1700,9 +1700,11 @@ public final class BookkeeperProtocol {
     public enum Flag
         implements com.google.protobuf.ProtocolMessageEnum {
       FENCE_LEDGER(0, 1),
+      RECOVERY_READ(1, 2),
       ;
       
       public static final int FENCE_LEDGER_VALUE = 1;
+      public static final int RECOVERY_READ_VALUE = 2;
       
       
       public final int getNumber() { return value; }
@@ -1710,6 +1712,7 @@ public final class BookkeeperProtocol {
       public static Flag valueOf(int value) {
         switch (value) {
           case 1: return FENCE_LEDGER;
+          case 2: return RECOVERY_READ;
           default: return null;
         }
       }
@@ -1740,7 +1743,7 @@ public final class BookkeeperProtocol {
       }
       
       private static final Flag[] VALUES = {
-        FENCE_LEDGER, 
+        FENCE_LEDGER, RECOVERY_READ, 
       };
       
       public static Flag valueOf(
@@ -5395,33 +5398,33 @@ public final class BookkeeperProtocol {
       "header\030\001 \002(\0132\017.BKPacketHeader\022!\n\013readReq" +
       "uest\030d \001(\0132\014.ReadRequest\022\037\n\naddRequest\030e" +
       " \001(\0132\013.AddRequest\022!\n\013authRequest\030f \001(\0132\014" +
-      ".AuthMessage\"~\n\013ReadRequest\022\037\n\004flag\030d \001(" +
-      "\0162\021.ReadRequest.Flag\022\020\n\010ledgerId\030\001 \002(\003\022\017" +
-      "\n\007entryId\030\002 \002(\003\022\021\n\tmasterKey\030\003 \001(\014\"\030\n\004Fl",
-      "ag\022\020\n\014FENCE_LEDGER\020\001\"\212\001\n\nAddRequest\022\036\n\004f" +
-      "lag\030d \001(\0162\020.AddRequest.Flag\022\020\n\010ledgerId\030" +
-      "\001 \002(\003\022\017\n\007entryId\030\002 \002(\003\022\021\n\tmasterKey\030\003 \002(" +
-      "\014\022\014\n\004body\030\004 \002(\014\"\030\n\004Flag\022\020\n\014RECOVERY_ADD\020" +
-      "\001\"\264\001\n\010Response\022\037\n\006header\030\001 \002(\0132\017.BKPacke" +
-      "tHeader\022\033\n\006status\030\002 \002(\0162\013.StatusCode\022#\n\014" +
-      "readResponse\030d \001(\0132\r.ReadResponse\022!\n\013add" +
-      "Response\030e \001(\0132\014.AddResponse\022\"\n\014authResp" +
-      "onse\030f \001(\0132\014.AuthMessage\"\\\n\014ReadResponse" +
-      "\022\033\n\006status\030\001 \002(\0162\013.StatusCode\022\020\n\010ledgerI",
-      "d\030\002 \002(\003\022\017\n\007entryId\030\003 \002(\003\022\014\n\004body\030\004 \001(\014\"M" +
-      "\n\013AddResponse\022\033\n\006status\030\001 \002(\0162\013.StatusCo" +
-      "de\022\020\n\010ledgerId\030\002 \002(\003\022\017\n\007entryId\030\003 \002(\003\"0\n" +
-      "\013AuthMessage\022\026\n\016authPluginName\030\001 \002(\t*\t\010\350" +
-      "\007\020\200\200\200\200\002*F\n\017ProtocolVersion\022\017\n\013VERSION_ON" +
-      "E\020\001\022\017\n\013VERSION_TWO\020\002\022\021\n\rVERSION_THREE\020\003*" +
-      "\235\001\n\nStatusCode\022\007\n\003EOK\020\000\022\016\n\tENOLEDGER\020\222\003\022" +
-      "\r\n\010ENOENTRY\020\223\003\022\014\n\007EBADREQ\020\224\003\022\010\n\003EIO\020\365\003\022\010" +
-      "\n\003EUA\020\366\003\022\020\n\013EBADVERSION\020\367\003\022\014\n\007EFENCED\020\370\003" +
-      "\022\016\n\tEREADONLY\020\371\003\022\025\n\020ETOOMANYREQUESTS\020\372\003*",
-      "c\n\rOperationType\022\016\n\nREAD_ENTRY\020\001\022\r\n\tADD_" +
-      "ENTRY\020\002\022\024\n\020RANGE_READ_ENTRY\020\003\022\023\n\017RANGE_A" +
-      "DD_ENTRY\020\004\022\010\n\004AUTH\020\005B\037\n\033org.apache.bookk" +
-      "eeper.protoH\001"
+      ".AuthMessage\"\221\001\n\013ReadRequest\022\037\n\004flag\030d \001" +
+      "(\0162\021.ReadRequest.Flag\022\020\n\010ledgerId\030\001 \002(\003\022" +
+      "\017\n\007entryId\030\002 \002(\003\022\021\n\tmasterKey\030\003 \001(\014\"+\n\004F",
+      "lag\022\020\n\014FENCE_LEDGER\020\001\022\021\n\rRECOVERY_READ\020\002" +
+      "\"\212\001\n\nAddRequest\022\036\n\004flag\030d \001(\0162\020.AddReque" +
+      "st.Flag\022\020\n\010ledgerId\030\001 \002(\003\022\017\n\007entryId\030\002 \002" +
+      "(\003\022\021\n\tmasterKey\030\003 \002(\014\022\014\n\004body\030\004 \002(\014\"\030\n\004F" +
+      "lag\022\020\n\014RECOVERY_ADD\020\001\"\264\001\n\010Response\022\037\n\006he" +
+      "ader\030\001 \002(\0132\017.BKPacketHeader\022\033\n\006status\030\002 " +
+      "\002(\0162\013.StatusCode\022#\n\014readResponse\030d \001(\0132\r" +
+      ".ReadResponse\022!\n\013addResponse\030e \001(\0132\014.Add" +
+      "Response\022\"\n\014authResponse\030f \001(\0132\014.AuthMes" +
+      "sage\"\\\n\014ReadResponse\022\033\n\006status\030\001 \002(\0162\013.S",
+      "tatusCode\022\020\n\010ledgerId\030\002 \002(\003\022\017\n\007entryId\030\003" +
+      " \002(\003\022\014\n\004body\030\004 \001(\014\"M\n\013AddResponse\022\033\n\006sta" +
+      "tus\030\001 \002(\0162\013.StatusCode\022\020\n\010ledgerId\030\002 \002(\003" +
+      "\022\017\n\007entryId\030\003 \002(\003\"0\n\013AuthMessage\022\026\n\016auth" +
+      "PluginName\030\001 \002(\t*\t\010\350\007\020\200\200\200\200\002*F\n\017ProtocolV" +
+      "ersion\022\017\n\013VERSION_ONE\020\001\022\017\n\013VERSION_TWO\020\002" +
+      "\022\021\n\rVERSION_THREE\020\003*\235\001\n\nStatusCode\022\007\n\003EO" +
+      "K\020\000\022\016\n\tENOLEDGER\020\222\003\022\r\n\010ENOENTRY\020\223\003\022\014\n\007EB" +
+      "ADREQ\020\224\003\022\010\n\003EIO\020\365\003\022\010\n\003EUA\020\366\003\022\020\n\013EBADVERS" +
+      "ION\020\367\003\022\014\n\007EFENCED\020\370\003\022\016\n\tEREADONLY\020\371\003\022\025\n\020",
+      "ETOOMANYREQUESTS\020\372\003*c\n\rOperationType\022\016\n\n" +
+      "READ_ENTRY\020\001\022\r\n\tADD_ENTRY\020\002\022\024\n\020RANGE_REA" +
+      "D_ENTRY\020\003\022\023\n\017RANGE_ADD_ENTRY\020\004\022\010\n\004AUTH\020\005" +
+      "B\037\n\033org.apache.bookkeeper.protoH\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
       new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
