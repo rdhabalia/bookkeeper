@@ -864,13 +864,10 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
                 LOG.debug("Unexpected response received from bookie : " + addr + " for type : " + operationType
                         + " and ledger:entry : " + response.ledgerId + ":" + response.entryId);
             }
-            if (response instanceof org.apache.bookkeeper.proto.BookieProtocol.ReadResponse) {
-                // If the request had already been timed out we need to discard the read response
-                ((org.apache.bookkeeper.proto.BookieProtocol.ReadResponse) response).release();
-            }
+
+            response.release();
         } else {
             long orderingKey = completionValue.ledgerId;
-
             executor.submitOrdered(orderingKey,
                     ReadV2ResponseCallback.create(this, status, operationType, response.ledgerId, response.entryId, completionValue, response));
         }
@@ -904,14 +901,12 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
             switch (operationType) {
             case ADD_ENTRY: {
                 pcbc.handleAddResponse(status, ledgerId, entryId, completionValue);
-                response.recycle();
                 break;
             }
             case READ_ENTRY: {
                 BookieProtocol.ReadResponse readResponse = (BookieProtocol.ReadResponse) response;
                 pcbc.handleReadResponse(status, readResponse.getLedgerId(), readResponse.getEntryId(),
                         readResponse.data, completionValue);
-                readResponse.recycle();
                 break;
             }
             default:
@@ -919,6 +914,8 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
                 break;
             }
 
+            response.release();
+            response.recycle();
             recycle();
         }
 
@@ -1048,12 +1045,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
                     + entryId + " rc: " + rcToRet + " entry length: " + body.readableBytes());
         }
 
-        if (status == StatusCode.EOK) {
-            rc.cb.readEntryComplete(rcToRet, ledgerId, entryId, body.slice(), rc.ctx);
-        } else {
-            body.release();
-            rc.cb.readEntryComplete(rcToRet, ledgerId, entryId, null, rc.ctx);
-        }
+        rc.cb.readEntryComplete(rcToRet, ledgerId, entryId, body.slice(), rc.ctx);
     }
 
     /**
