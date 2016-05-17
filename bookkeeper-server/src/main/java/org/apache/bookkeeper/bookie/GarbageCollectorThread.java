@@ -414,16 +414,17 @@ public class GarbageCollectorThread extends SafeRunnable {
         // Loop through all of the entry logs and remove the non-active ledgers.
         for (Long entryLogId : entryLogMetaMap.keySet()) {
             EntryLogMetadata meta = entryLogMetaMap.get(entryLogId);
-            for (Long entryLogLedger : meta.getLedgersMap().keySet()) {
+
+            meta.removeLedgerIf((entryLogLedger) -> {
                 // Remove the entry log ledger from the set if it isn't active.
                 try {
-                    if (!ledgerStorage.ledgerExists(entryLogLedger)) {
-                        meta.removeLedger(entryLogLedger);
-                    }
+                    return !ledgerStorage.ledgerExists(entryLogLedger);
                 } catch (IOException e) {
                     LOG.error("Error reading from ledger storage", e);
+                    return false;
                 }
-            }
+            });
+
             if (meta.isEmpty()) {
                 // This means the entry log is not associated with any active ledgers anymore.
                 // We can remove this entry log file now.

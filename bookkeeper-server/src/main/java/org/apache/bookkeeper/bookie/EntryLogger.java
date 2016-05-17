@@ -43,11 +43,9 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
@@ -59,11 +57,14 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.bookkeeper.bookie.LedgerDirsManager.LedgerDirsListener;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.proto.PerChannelBookieClient;
 import org.apache.bookkeeper.util.IOUtils;
+import org.apache.bookkeeper.util.collections.ConcurrentLongLongHashMap;
+import org.apache.bookkeeper.util.collections.ConcurrentLongLongHashMap.BiConsumerLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -98,7 +99,7 @@ public class EntryLogger {
             entryLogMetada.addLedgerSize(ledgerId, entrySize);
         }
 
-        public Map<Long, Long> getLedgersMap() {
+        public ConcurrentLongLongHashMap getLedgersMap() {
             return entryLogMetada.getLedgersMap();
         }
     }
@@ -474,38 +475,60 @@ public class EntryLogger {
     private void appendLedgersMap(BufferedLogChannel entryLogChannel) throws IOException {
         long ledgerMapOffset = entryLogChannel.position();
 
-        Map<Long, Long> ledgersMap = entryLogChannel.getLedgersMap();
-
-        Iterator<Entry<Long, Long>> iterator = ledgersMap.entrySet().iterator();
-        int numberOfLedgers = ledgersMap.size();
-        int remainingLedgers = numberOfLedgers;
+        ConcurrentLongLongHashMap ledgersMap = entryLogChannel.getLedgersMap();
+        int numberOfLedgers = (int) ledgersMap.size();
 
         // Write the ledgers map into several batches
-        while (iterator.hasNext()) {
-            // Start new batch
-            int batchSize = Math.min(remainingLedgers, LEDGERS_MAP_MAX_BATCH_SIZE);
-            int ledgerMapSize = LEDGERS_MAP_HEADER_SIZE + LEDGERS_MAP_ENTRY_SIZE * batchSize;
-            ByteBuffer serializedMap = ByteBuffer.allocate(ledgerMapSize);
+        final AtomicLong currentOffset = new AtomicLong(ledgerMapOffset);
+        final int maxMapSize = LEDGERS_MAP_HEADER_SIZE + LEDGERS_MAP_ENTRY_SIZE * LEDGERS_MAP_MAX_BATCH_SIZE;
+        final ByteBuffer serializedMap = ByteBuffer.allocate(maxMapSize);
 
-            serializedMap.putInt(ledgerMapSize - 4);
-            serializedMap.putLong(INVALID_LID);
-            serializedMap.putLong(LEDGERS_MAP_ENTRY_ID);
-            serializedMap.putInt(batchSize);
+        try {
+            ledgersMap.forEach(new BiConsumerLong() {
+                int remainingLedgers = numberOfLedgers;
+                boolean startNewBatch = true;
+                int remainingInBatch = 0;
 
-            // Dump all ledgers for this batch
-            for (int i = 0; i < batchSize; i++) {
-                Entry<Long, Long> entry = iterator.next();
-                long ledgerId = entry.getKey();
-                long size = entry.getValue();
+                @Override
+                public void accept(long ledgerId, long size) {
+                    if (startNewBatch) {
+                        int batchSize = Math.min(remainingLedgers, LEDGERS_MAP_MAX_BATCH_SIZE);
+                        int ledgerMapSize = LEDGERS_MAP_HEADER_SIZE + LEDGERS_MAP_ENTRY_SIZE * batchSize;
 
-                serializedMap.putLong(ledgerId);
-                serializedMap.putLong(size);
-                --remainingLedgers;
+                        serializedMap.clear();
+                        serializedMap.putInt(ledgerMapSize - 4);
+                        serializedMap.putLong(INVALID_LID);
+                        serializedMap.putLong(LEDGERS_MAP_ENTRY_ID);
+                        serializedMap.putInt(batchSize);
+
+                        startNewBatch = false;
+                        remainingInBatch = batchSize;
+                    }
+                    // Dump the ledger in the current batch
+                    serializedMap.putLong(ledgerId);
+                    serializedMap.putLong(size);
+                    --remainingLedgers;
+
+                    if (--remainingInBatch == 0) {
+                        // Close current batch
+                        serializedMap.flip();
+                        try {
+                            int written = entryLogChannel.fileChannel.write(serializedMap, currentOffset.get());
+                            currentOffset.addAndGet(written);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
+
+                        startNewBatch = true;
+                    }
+                }
+            });
+        } catch (RuntimeException e) {
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) e.getCause();
+            } else {
+                throw e;
             }
-
-            // Close current batch
-            serializedMap.flip();
-            entryLogChannel.fileChannel.write(serializedMap);
         }
 
         // Update the headers with the map offset and count of ledgers
