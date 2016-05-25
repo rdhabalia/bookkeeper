@@ -18,10 +18,15 @@
 package org.apache.bookkeeper.client;
 
 import static org.apache.bookkeeper.client.RackawareEnsemblePlacementPolicy.REPP_DNS_RESOLVER_CLASS;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.apache.bookkeeper.client.BKException.BKNotEnoughBookiesException;
@@ -35,8 +40,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static org.junit.Assert.*;
 
 public class TestRackawareEnsemblePlacementPolicy {
 
@@ -296,6 +299,39 @@ public class TestRackawareEnsemblePlacementPolicy {
         repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
         addrs.remove(addr1);
         repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
+    }
+
+    @Test(timeout = 60000)
+    public void testNotifyRackChange() throws Exception {
+        BookieSocketAddress addr1 = new BookieSocketAddress("127.0.0.1", 3181);
+        BookieSocketAddress addr2 = new BookieSocketAddress("127.0.0.2", 3181);
+        BookieSocketAddress addr3 = new BookieSocketAddress("127.0.0.3", 3181);
+        BookieSocketAddress addr4 = new BookieSocketAddress("127.0.0.4", 3181);
+        // update dns mapping
+        StaticDNSResolver.addNodeToRack(addr1, NetworkTopology.DEFAULT_RACK);
+        StaticDNSResolver.addNodeToRack(addr2, "/r2");
+        StaticDNSResolver.addNodeToRack(addr3, "/r2");
+        StaticDNSResolver.addNodeToRack(addr4, "/r2");
+        // Update cluster
+        Set<BookieSocketAddress> addrs = new HashSet<BookieSocketAddress>();
+        addrs.add(addr1);
+        addrs.add(addr2);
+        addrs.add(addr3);
+        addrs.add(addr4);
+        repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
+
+        ArrayList<BookieSocketAddress> ensemble = repp.newEnsemble(3, 2, new HashSet<BookieSocketAddress>());
+        int numCovered = getNumCoveredWriteQuorums(ensemble, 2);
+        assertTrue(numCovered >= 1 && numCovered < 3);
+
+        List<BookieSocketAddress> bookieAddressList = new ArrayList<>();
+        List<String> rackList = new ArrayList<>();
+        bookieAddressList.add(addr2);
+        rackList.add("/r3");
+        StaticDNSResolver.changeRack(bookieAddressList, rackList);
+
+        ensemble = repp.newEnsemble(3, 2, new HashSet<BookieSocketAddress>());
+        assertEquals(3, getNumCoveredWriteQuorums(ensemble, 2));
     }
 
     private int getNumCoveredWriteQuorums(ArrayList<BookieSocketAddress> ensemble, int writeQuorumSize)

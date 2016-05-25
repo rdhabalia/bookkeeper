@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+import org.apache.bookkeeper.client.RackawareEnsemblePlacementPolicy;
+import org.apache.bookkeeper.client.RackawareEnsemblePlacementPolicy.RackChangeNotifier;
 import org.apache.bookkeeper.net.AbstractDNSToSwitchMapping;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.net.DNSToSwitchMapping;
@@ -32,11 +34,13 @@ import org.slf4j.LoggerFactory;
 /**
  * Implements {@link DNSToSwitchMapping} via static mappings. Used in test cases to simulate racks.
  */
-public class StaticDNSResolver extends AbstractDNSToSwitchMapping {
+public class StaticDNSResolver extends AbstractDNSToSwitchMapping implements RackChangeNotifier {
 
     static final Logger LOG = LoggerFactory.getLogger(StaticDNSResolver.class);
 
     private static final ConcurrentMap<BookieSocketAddress, String> name2Racks = new ConcurrentHashMap<BookieSocketAddress, String>();
+
+    private static RackawareEnsemblePlacementPolicy rackawarePolicy = null;
 
     public static void addNodeToRack(BookieSocketAddress bookieAddress, String rack) {
         name2Racks.put(bookieAddress, rack);
@@ -78,4 +82,16 @@ public class StaticDNSResolver extends AbstractDNSToSwitchMapping {
         // nop
     }
 
+    @Override
+    public void registerRackChangeListener(RackawareEnsemblePlacementPolicy rackawareEnsemblePolicy) {
+        rackawarePolicy = rackawareEnsemblePolicy;
+    }
+
+    public static void changeRack(List<BookieSocketAddress> bookieAddressList, List<String> rack) {
+        for (int i = 0; i < bookieAddressList.size(); i++) {
+            BookieSocketAddress bkAddress = bookieAddressList.get(i);
+            name2Racks.put(bkAddress, rack.get(i));
+        }
+        rackawarePolicy.onBookieRackChange(bookieAddressList);
+    }
 }

@@ -56,6 +56,13 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
     public static final String REPP_DNS_RESOLVER_CLASS = "reppDnsResolverClass";
 
     /**
+     * Notifier used by the RackawareEnsemblePlacementPolicy to get notified if a rack changes for a bookie
+     */
+    public static interface RackChangeNotifier {
+        void registerRackChangeListener(RackawareEnsemblePlacementPolicy rackawarePolicy);
+    }
+
+    /**
      * Predicate used when choosing an ensemble.
      */
     protected static interface Predicate {
@@ -312,6 +319,9 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
             dnsResolver = ReflectionUtils.newInstance(dnsResolverName, DNSToSwitchMapping.class);
             if (dnsResolver instanceof Configurable) {
                 ((Configurable) dnsResolver).setConf(conf);
+            }
+            if (dnsResolver instanceof RackChangeNotifier) {
+                ((RackChangeNotifier) dnsResolver).registerRackChangeListener(this);
             }
         } catch (RuntimeException re) {
             LOG.info("Failed to initialize DNS Resolver {}, used default subnet resolver.", dnsResolverName, re);
@@ -610,4 +620,19 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
         throw new BKNotEnoughBookiesException();
     }
 
+    public void onBookieRackChange(List<BookieSocketAddress> bookieAddressList) {
+        rwLock.writeLock().lock();
+        try {
+            for (BookieSocketAddress bookieAddress : bookieAddressList) {
+                BookieNode node = knownBookies.get(bookieAddress);
+                if (node != null) {
+                    // refresh the rack info if its a known bookie
+                    topology.remove(node);
+                    topology.add(createBookieNode(bookieAddress));
+                }
+            }
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
 }
