@@ -144,7 +144,6 @@ class BookieNettyServer {
         bootstrap.childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT);
         bootstrap.group(eventLoopGroup, eventLoopGroup);
         bootstrap.childOption(ChannelOption.TCP_NODELAY, conf.getServerTcpNoDelay());
-        bootstrap.childOption(ChannelOption.SO_LINGER, 2);
         bootstrap.childOption(ChannelOption.RCVBUF_ALLOCATOR,
                 new AdaptiveRecvByteBufAllocator(64 * 1024, 8 * 1024 * 1024, 16 * 1024 * 1024));
 
