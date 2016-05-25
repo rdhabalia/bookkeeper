@@ -196,79 +196,79 @@ public class ReplicationWorker implements Runnable {
 
     private boolean rereplicate(long ledgerIdToReplicate) throws InterruptedException, BKException,
             UnavailableException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Going to replicate the fragments of the ledger: {}", ledgerIdToReplicate);
-        }
-        LedgerHandle lh;
+        boolean deferLedgerLockRelease = false;
         try {
-            lh = admin.openLedgerNoRecovery(ledgerIdToReplicate);
-        } catch (BKNoSuchLedgerExistsException e) {
-            // Ledger might have been deleted by user
-            LOG.info("BKNoSuchLedgerExistsException while opening "
-                    + "ledger for replication. Other clients "
-                    + "might have deleted the ledger. "
-                    + "So, no harm to continue");
-            underreplicationManager.markLedgerReplicated(ledgerIdToReplicate);
-            return false;
-        } catch (BKReadException e) {
-            LOG.info("BKReadException while"
-                    + " opening ledger for replication."
-                    + " Enough Bookies might not have available"
-                    + "So, no harm to continue");
-            underreplicationManager
-                    .releaseUnderreplicatedLedger(ledgerIdToReplicate);
-            return false;
-        } catch (BKBookieHandleNotAvailableException e) {
-            LOG.info("BKBookieHandleNotAvailableException while"
-                    + " opening ledger for replication."
-                    + " Enough Bookies might not have available"
-                    + "So, no harm to continue");
-            underreplicationManager
-                    .releaseUnderreplicatedLedger(ledgerIdToReplicate);
-            return false;
-        }
-        Set<LedgerFragment> fragments = getUnderreplicatedFragments(lh);
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Founds fragments {} for replication from ledger: {}", fragments, ledgerIdToReplicate);
-        }
-
-        boolean foundOpenFragments = false;
-        for (LedgerFragment ledgerFragment : fragments) {
-            if (!ledgerFragment.isClosed()) {
-                foundOpenFragments = true;
-                continue;
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Going to replicate the fragments of the ledger: {}", ledgerIdToReplicate);
             }
+            LedgerHandle lh;
             try {
-                admin.replicateLedgerFragment(lh, ledgerFragment, null);
-            } catch (BKException.BKBookieHandleNotAvailableException e) {
-                LOG.warn("BKBookieHandleNotAvailableException "
-                        + "while replicating the fragment", e);
-            } catch (BKException.BKLedgerRecoveryException e) {
-                LOG.warn("BKLedgerRecoveryException "
-                        + "while replicating the fragment", e);
-            } catch (BKException.BKNotEnoughBookiesException e) {
-                LOG.warn("BKNotEnoughBookiesException "
-                        + "while replicating the fragment", e);
+                lh = admin.openLedgerNoRecovery(ledgerIdToReplicate);
+            } catch (BKNoSuchLedgerExistsException e) {
+                // Ledger might have been deleted by user
+                LOG.info("BKNoSuchLedgerExistsException while opening " + "ledger for replication. Other clients "
+                        + "might have deleted the ledger. " + "So, no harm to continue");
+                underreplicationManager.markLedgerReplicated(ledgerIdToReplicate);
+                return false;
+            } catch (BKReadException e) {
+                LOG.info("BKReadException while" + " opening ledger for replication."
+                        + " Enough Bookies might not have available" + "So, no harm to continue");
+                return false;
+            } catch (BKBookieHandleNotAvailableException e) {
+                LOG.info("BKBookieHandleNotAvailableException while" + " opening ledger for replication."
+                        + " Enough Bookies might not have available" + "So, no harm to continue");
+                return false;
             }
-        }
+            Set<LedgerFragment> fragments = getUnderreplicatedFragments(lh);
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Founds fragments {} for replication from ledger: {}", fragments, ledgerIdToReplicate);
+            }
 
-        if (foundOpenFragments || isLastSegmentOpenAndMissingBookies(lh)) {
-            deferLedgerLockRelease(ledgerIdToReplicate);
-            return false;
-        }
+            boolean foundOpenFragments = false;
+            for (LedgerFragment ledgerFragment : fragments) {
+                if (!ledgerFragment.isClosed()) {
+                    foundOpenFragments = true;
+                    continue;
+                }
+                try {
+                    admin.replicateLedgerFragment(lh, ledgerFragment, null);
+                } catch (BKException.BKBookieHandleNotAvailableException e) {
+                    LOG.warn("BKBookieHandleNotAvailableException while replicating the fragment", e);
+                } catch (BKException.BKLedgerRecoveryException e) {
+                    LOG.warn("BKLedgerRecoveryException while replicating the fragment", e);
+                } catch (BKException.BKNotEnoughBookiesException e) {
+                    LOG.warn("BKNotEnoughBookiesException while replicating the fragment", e);
+                }
+            }
 
-        fragments = getUnderreplicatedFragments(lh);
-        if (fragments.size() == 0) {
-            LOG.info("Ledger replicated successfully. ledger id is: "
-                    + ledgerIdToReplicate);
-            underreplicationManager.markLedgerReplicated(ledgerIdToReplicate);
-            return true;
-        } else {
-            // Releasing the underReplication ledger lock and compete
-            // for the replication again for the pending fragments
-            underreplicationManager
-                    .releaseUnderreplicatedLedger(ledgerIdToReplicate);
-            return false;
+            if (foundOpenFragments || isLastSegmentOpenAndMissingBookies(lh)) {
+                deferLedgerLockRelease = true;
+                deferLedgerLockRelease(ledgerIdToReplicate);
+                return false;
+            }
+
+            fragments = getUnderreplicatedFragments(lh);
+            if (fragments.size() == 0) {
+                LOG.info("Ledger replicated successfully. ledger id is: " + ledgerIdToReplicate);
+                underreplicationManager.markLedgerReplicated(ledgerIdToReplicate);
+                return true;
+            } else {
+                // Releasing the underReplication ledger lock and compete
+                // for the replication again for the pending fragments
+                return false;
+            }
+        } finally {
+            // we make sure we always release the underreplicated lock, unless we decided to defer it. If the lock has
+            // already been released, this is a no-op
+            if (!deferLedgerLockRelease) {
+                try {
+                    underreplicationManager.releaseUnderreplicatedLedger(ledgerIdToReplicate);
+                } catch (UnavailableException e) {
+                    LOG.error("UnavailableException while releasing the underreplicated lock for ledger {}:",
+                            ledgerIdToReplicate, e);
+                    shutdown();
+                }
+            }
         }
     }
 
