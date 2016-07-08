@@ -1,5 +1,7 @@
 package org.apache.bookkeeper.client;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.zip.CRC32;
 
 /*
@@ -20,13 +22,37 @@ import java.util.zip.CRC32;
 * limitations under the License.
 */
 
-
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufProcessor;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 
 class CRC32DigestManager extends DigestManager {
+
+    private static final Method updateByteBuffer;
+    private static final Method updateBytes;
+
+    static {
+        // Access CRC32 class private native methods to compute the crc on the ByteBuf direct memory,
+        // without necessity to convert to a nio ByteBuffer.
+        Method updateByteBufferMethod = null;
+        Method updateBytesMethod = null;
+        try {
+            updateByteBufferMethod = CRC32.class.getDeclaredMethod("updateByteBuffer", int.class, long.class, int.class,
+                    int.class);
+            updateByteBufferMethod.setAccessible(true);
+
+            updateBytesMethod = CRC32.class.getDeclaredMethod("updateBytes", int.class, byte[].class, int.class,
+                    int.class);
+            updateBytesMethod.setAccessible(true);
+        } catch (NoSuchMethodException | SecurityException e) {
+            updateByteBufferMethod = null;
+            updateBytesMethod = null;
+        }
+
+        updateByteBuffer = updateByteBufferMethod;
+        updateBytes = updateBytesMethod;
+    }
+
     public CRC32DigestManager(long ledgerId) {
         super(ledgerId);
     }
@@ -34,18 +60,22 @@ class CRC32DigestManager extends DigestManager {
     @Override
     int getMacCodeLength() {
         return 8;
-    }    
-    
-    @Override
-    Digest getDigest() {
-        return CRC32Digest.RECYCLER.get();
     }
 
-    private static class CRC32Digest implements Digest, ByteBufProcessor {
+    @Override
+    Digest getDigest() {
+        if (updateByteBuffer != null) {
+            return DirectCRC32Digest.RECYCLER.get();
+        } else {
+            return StandardCRC32Digest.RECYCLER.get();
+        }
+    }
+
+    private static class StandardCRC32Digest implements Digest {
         private final Handle recyclerHandle;
         private final CRC32 crc;
 
-        public CRC32Digest(Handle recyclerHandle) {
+        public StandardCRC32Digest(Handle recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
             this.crc = new CRC32();
         }
@@ -57,18 +87,12 @@ class CRC32DigestManager extends DigestManager {
 
         @Override
         public void update(ByteBuf data) {
-            data.forEachByte(this);
+            crc.update(data.nioBuffer());
         }
 
         @Override
         public void update(ByteBuf data, int index, int length) {
-            data.forEachByte(index, length, this);
-        }
-
-        @Override
-        public boolean process(byte value) throws Exception {
-            crc.update(value);
-            return true;
+            crc.update(data.nioBuffer(index, length));
         }
 
         @Override
@@ -77,10 +101,61 @@ class CRC32DigestManager extends DigestManager {
             RECYCLER.recycle(this, recyclerHandle);
         }
 
-        private static final Recycler<CRC32Digest> RECYCLER = new Recycler<CRC32Digest>() {
-            protected CRC32Digest newObject(Recycler.Handle handle) {
-                return new CRC32Digest(handle);
+        private static final Recycler<StandardCRC32Digest> RECYCLER = new Recycler<StandardCRC32Digest>() {
+            protected StandardCRC32Digest newObject(Recycler.Handle handle) {
+                return new StandardCRC32Digest(handle);
             }
         };
     }
+
+    private static class DirectCRC32Digest implements Digest {
+        private final Handle recyclerHandle;
+        private int crcValue;
+
+        public DirectCRC32Digest(Handle recyclerHandle) {
+            this.recyclerHandle = recyclerHandle;
+            this.crcValue = 0;
+        }
+
+        @Override
+        public void getValue(ByteBuf buf) {
+            buf.writeLong(crcValue);
+        }
+
+        @Override
+        public void update(ByteBuf data) {
+            update(data, data.readerIndex(), data.readableBytes());
+        }
+
+        @Override
+        public void update(ByteBuf data, int index, int length) {
+            try {
+                if (data.hasMemoryAddress()) {
+                    crcValue = (int) updateByteBuffer.invoke(null, crcValue, data.memoryAddress(), index, length);
+                } else if (data.hasArray()) {
+                    crcValue = (int) updateBytes.invoke(null, crcValue, data.array(), data.arrayOffset() + index,
+                            length);
+                } else {
+                    byte[] b = new byte[length];
+                    data.getBytes(index, b, 0, length);
+                    crcValue = (int) updateBytes.invoke(null, crcValue, b, 0, b.length);
+                }
+            } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        @Override
+        public void recycle() {
+            crcValue = 0;
+            RECYCLER.recycle(this, recyclerHandle);
+        }
+
+        private static final Recycler<DirectCRC32Digest> RECYCLER = new Recycler<DirectCRC32Digest>() {
+            protected DirectCRC32Digest newObject(Recycler.Handle handle) {
+                return new DirectCRC32Digest(handle);
+            }
+        };
+    }
+
 }
