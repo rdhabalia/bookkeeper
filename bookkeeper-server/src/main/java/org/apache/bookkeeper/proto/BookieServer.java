@@ -466,6 +466,8 @@ public class BookieServer {
         bkOpts.addOption("c", "conf", true, "Configuration for Bookie Server");
         bkOpts.addOption("withAutoRecovery", false,
                 "Start Autorecovery service Bookie server");
+        bkOpts.addOption("readOnly", false,
+                "Force Start a ReadOnly Bookie server");
         bkOpts.addOption("h", "help", false, "Print help message");
     }
 
@@ -517,6 +519,10 @@ public class BookieServer {
 
             if (cmdLine.hasOption("withAutoRecovery")) {
                 conf.setAutoRecoveryDaemonEnabled(true);
+            }
+
+            if (cmdLine.hasOption("readOnly")) {
+                conf.setForceReadOnlyBookie(true);
             }
 
             if (leftArgs.length < 4) {
