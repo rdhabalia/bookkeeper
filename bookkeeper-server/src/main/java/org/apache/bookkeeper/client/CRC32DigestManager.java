@@ -119,7 +119,7 @@ class CRC32DigestManager extends DigestManager {
 
         @Override
         public void getValue(ByteBuf buf) {
-            buf.writeLong(crcValue);
+            buf.writeLong(crcValue & 0xffffffffL);
         }
 
         @Override
