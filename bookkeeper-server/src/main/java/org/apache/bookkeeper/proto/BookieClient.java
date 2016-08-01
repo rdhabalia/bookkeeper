@@ -329,7 +329,7 @@ public class BookieClient implements PerChannelBookieClientFactory {
     public void monitorPendingOperations() {
         for (PerChannelBookieClientPool clientPool : channels.values()) {
             for (int idx = 0; idx < numConnectionsPerBookie; idx++) {
-                clientPool.obtain(new GenericCallback<PerChannelBookieClient>() {
+                clientPool.get(new GenericCallback<PerChannelBookieClient>() {
 
                     @Override
                     public void operationComplete(int rc, PerChannelBookieClient result) {
