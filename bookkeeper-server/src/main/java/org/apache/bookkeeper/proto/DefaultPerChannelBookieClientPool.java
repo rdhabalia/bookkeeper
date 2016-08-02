@@ -22,6 +22,7 @@ package org.apache.bookkeeper.proto;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.util.MathUtils;
@@ -68,6 +69,17 @@ class DefaultPerChannelBookieClientPool implements PerChannelBookieClientPool,
             pcbc.connectIfNeededAndDoOp(this);
         }
     }
+
+    @Override
+    public void get(GenericCallback<PerChannelBookieClient> callback, long key) {
+        if (1 == clients.length) {
+            callback.operationComplete(BKException.Code.OK, clients[0]);
+            return;
+        }
+        int idx = MathUtils.signSafeMod(key, clients.length);
+        callback.operationComplete(BKException.Code.OK, clients[idx]);
+    }
+
 
     @Override
     public void obtain(GenericCallback<PerChannelBookieClient> callback, long key) {

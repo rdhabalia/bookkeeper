@@ -33,6 +33,17 @@ interface PerChannelBookieClientPool {
     void intialize();
 
     /**
+     * Get a channel from channel pool
+     * 
+     * @param callback
+     *            callback to return channel from channel pool.
+     * @param key
+     *            key to retrieve channel from channel pool.
+     * @return
+     */
+    void get(GenericCallback<PerChannelBookieClient> callback, long key);
+
+    /**
      * Obtain a channel from channel pool to execute operations.
      *
      * @param callback
