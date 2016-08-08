@@ -178,6 +178,21 @@ public class ConcurrentLongLongHashMap {
     }
 
     /**
+     * Change the value for a specific key only if it matches the current value.
+     *
+     * @param key
+     * @param currentValue
+     * @param newValue
+     * @return
+     */
+    public boolean compareAndSet(long key, long currentValue, long newValue) {
+        checkBiggerEqualZero(key);
+        checkBiggerEqualZero(newValue);
+        long h = hash(key);
+        return getSection(h).compareAndSet(key, currentValue, newValue, (int) h);
+    }
+
+    /**
      * Remove an existing entry if found
      *
      * @param key
@@ -417,6 +432,64 @@ public class ConcurrentLongLongHashMap {
                         table[bucket + 1] = delta;
                         ++size;
                         return delta;
+                    } else if (storedKey == DeletedKey) {
+                        // The bucket contained a different deleted key
+                        if (firstDeletedKey == -1) {
+                            firstDeletedKey = bucket;
+                        }
+                    }
+
+                    bucket = (bucket + 2) & (table.length - 1);
+                }
+            } finally {
+                if (usedBuckets > resizeThreshold) {
+                    try {
+                        rehash();
+                    } finally {
+                        unlockWrite(stamp);
+                    }
+                } else {
+                    unlockWrite(stamp);
+                }
+            }
+        }
+
+        boolean compareAndSet(long key, long currentValue, long newValue, int keyHash) {
+            long stamp = writeLock();
+            int bucket = signSafeMod(keyHash, capacity);
+
+            // Remember where we find the first available spot
+            int firstDeletedKey = -1;
+
+            try {
+                while (true) {
+                    long storedKey = table[bucket];
+                    long storedValue = table[bucket + 1];
+
+                    if (key == storedKey) {
+                        if (storedValue != currentValue) {
+                            return false;
+                        }
+
+                        // Over write an old value for same key
+                        table[bucket + 1] = newValue;
+                        return true;
+                    } else if (storedKey == EmptyKey) {
+                        // Found an empty bucket. This means the key is not in the map.
+                        if (currentValue == -1) {
+                            if (firstDeletedKey != -1) {
+                                bucket = firstDeletedKey;
+                            } else {
+                                ++usedBuckets;
+                            }
+
+                            table[bucket] = key;
+                            table[bucket + 1] = newValue;
+                            ++size;
+                            return true;
+                        } else {
+                            return false;
+                        }
                     } else if (storedKey == DeletedKey) {
                         // The bucket contained a different deleted key
                         if (firstDeletedKey == -1) {

@@ -18,9 +18,8 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
-import com.google.common.collect.ArrayListMultimap;
+import com.carrotsearch.hppc.LongObjectHashMap;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Multimap;
 
 @RunWith(Parameterized.class)
 public class EntryLocationIndexTest {
@@ -95,21 +94,20 @@ public class EntryLocationIndexTest {
         EntryLocationIndex idx = new EntryLocationIndex(serverConfiguration, storageFactory, tmpDir.getAbsolutePath(),
                 NullStatsLogger.INSTANCE, 1 * 1024);
 
-        Multimap<Long, LongPair> locations = ArrayListMultimap.create();
+        LongObjectHashMap<List<LongPair>> locations = new LongObjectHashMap<>();
 
         // Add some dummy indexes
-        locations.put(40312l, new LongPair(0, 1));
-        locations.put(40313l, new LongPair(10, 2));
-        locations.put(40320l, new LongPair(0, 3));
+        locations.put(40312l, Lists.newArrayList(new LongPair(0, 1)));
+        locations.put(40313l, Lists.newArrayList(new LongPair(10, 2)));
+        locations.put(40320l, Lists.newArrayList(new LongPair(0, 3)));
         idx.addLocations(locations);
 
         locations.clear();
 
         // Add more indexes in a different batch
-        locations.put(40313l, new LongPair(11, 5));
-        locations.put(40313l, new LongPair(12, 6));
-        locations.put(40320l, new LongPair(1, 7));
-        locations.put(40312l, new LongPair(3, 4));
+        locations.put(40313l, Lists.newArrayList(new LongPair(11, 5), new LongPair(12, 6)));
+        locations.put(40320l, Lists.newArrayList(new LongPair(1, 7)));
+        locations.put(40312l, Lists.newArrayList(new LongPair(3, 4)));
         idx.addLocations(locations);
 
         idx.delete(40313);
@@ -154,22 +152,21 @@ public class EntryLocationIndexTest {
         EntryLocationIndex idx = new EntryLocationIndex(serverConfiguration, storageFactory, tmpDir.getAbsolutePath(),
                 NullStatsLogger.INSTANCE, 1 * 1024);
 
-        Multimap<Long, LongPair> locations = ArrayListMultimap.create();
+        LongObjectHashMap<List<LongPair>> locations = new LongObjectHashMap<>();
 
         // Add some dummy indexes
-        locations.put(40312l, new LongPair(0, 1));
-        locations.put(40313l, new LongPair(10, 2));
-        locations.put(40320l, new LongPair(0, 3));
+        locations.put(40312l, Lists.newArrayList(new LongPair(0, 1)));
+        locations.put(40313l, Lists.newArrayList(new LongPair(10, 2)));
+        locations.put(40320l, Lists.newArrayList(new LongPair(0, 3)));
         idx.addLocations(locations);
 
         locations.clear();
         idx.delete(40313);
 
         // Add more indexes in a different batch
-        locations.put(40313l, new LongPair(11, 5));
-        locations.put(40313l, new LongPair(12, 6));
-        locations.put(40320l, new LongPair(1, 7));
-        locations.put(40312l, new LongPair(3, 4));
+        locations.put(40313l, Lists.newArrayList(new LongPair(11, 5), new LongPair(12, 6)));
+        locations.put(40320l, Lists.newArrayList(new LongPair(1, 7)));
+        locations.put(40312l, Lists.newArrayList(new LongPair(3, 4)));
         idx.addLocations(locations);
 
         idx.flush();

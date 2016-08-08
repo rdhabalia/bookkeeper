@@ -17,16 +17,16 @@ import org.apache.bookkeeper.bookie.storage.ldb.SortedLruCache.Weighter;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.StatsLogger;
+import org.apache.bookkeeper.util.collections.ConcurrentLongHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.carrotsearch.hppc.LongObjectHashMap;
+import com.carrotsearch.hppc.procedures.LongObjectProcedure;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-
-import io.netty.util.internal.ConcurrentSet;
 
 /**
  * Maintains an index of the entry locations in the EntryLogger.
@@ -60,8 +60,8 @@ public class EntryLocationIndex implements Closeable {
                 long otherEntryId = lp.second;
 
                 if (log.isDebugEnabled()) {
-                    log.debug("Comparing range ({}, {}, {}) to entry {}, {}", new Object[] { first, second, lastEntry,
-                            otherLedgerId, otherEntryId });
+                    log.debug("Comparing range ({}, {}, {}) to entry {}, {}",
+                            new Object[] { first, second, lastEntry, otherLedgerId, otherEntryId });
                 }
                 if (first != otherLedgerId) {
                     return Long.compare(first, otherLedgerId);
@@ -85,12 +85,12 @@ public class EntryLocationIndex implements Closeable {
 
     private final KeyValueStorage locationsDb;
     private final SortedLruCache<LongPair, LedgerIndexPage> locationsCache;
-    private final ConcurrentSet<Long> deletedLedgers = new ConcurrentSet<Long>();
+    private final ConcurrentLongHashSet deletedLedgers = new ConcurrentLongHashSet();
 
     private StatsLogger stats;
 
-    public EntryLocationIndex(ServerConfiguration conf, KeyValueStorageFactory storageFactory, String basePath, StatsLogger stats,
-            long entryLocationCacheMaxSize) throws IOException {
+    public EntryLocationIndex(ServerConfiguration conf, KeyValueStorageFactory storageFactory, String basePath,
+            StatsLogger stats, long entryLocationCacheMaxSize) throws IOException {
         String locationsDbPath = FileSystems.getDefault().getPath(basePath, "locations").toFile().toString();
         locationsDb = storageFactory.newKeyValueStorage(locationsDbPath, DbConfigType.Huge, conf);
 
@@ -208,7 +208,6 @@ public class EntryLocationIndex implements Closeable {
             return -1L;
         } else {
 
-
             long lastEntryId = ledgerIndexPage.getLastEntry();
             if (log.isDebugEnabled()) {
                 log.debug("Found last page in storage db for ledger {} : {} -- last entry: {}",
@@ -218,81 +217,86 @@ public class EntryLocationIndex implements Closeable {
         }
     }
 
-    public void addLocations(Multimap<Long, LongPair> locationMap) throws IOException {
+    public void addLocations(LongObjectHashMap<List<LongPair>> locationMap) throws IOException {
         Batch batch = locationsDb.newBatch();
 
         if (log.isDebugEnabled()) {
-            log.debug("Add locations for {} ledgers", locationMap.keySet().size());
+            log.debug("Add locations for {} ledgers", locationMap.size());
         }
 
         // For each ledger with new entries in the write cache, we write a single record, containing all the
         // offsets for all its own entries
-        for (long ledgerId : locationMap.keySet()) {
+        locationMap.forEach(new LongObjectProcedure<List<LongPair>>() {
+            @Override
+            public void apply(long ledgerId, List<LongPair> entries) {
+                try {
+                    // if there is any pending delete for this ledger, we need to remove it
+                    deletedLedgers.remove(ledgerId);
 
-            // if there is any pending delete for this ledger, we need to remove it
-            deletedLedgers.remove(ledgerId);
+                    final long lastEntryId = getLastEntryInLedger(ledgerId);
 
-            final long lastEntryId = getLastEntryInLedger(ledgerId);
+                    LedgerIndexPage olderIndexPage = null;
 
-            List<LongPair> entries = (List<LongPair>) locationMap.get(ledgerId);
-            LedgerIndexPage olderIndexPage = null;
-
-            if (log.isDebugEnabled()) {
-                log.debug("Add locations for ledger {} -- locations: {}", ledgerId, entries.size());
-            }
-
-            // First check entries that arrived out of order
-            int entriesOutOfOrder = 0;
-            for (LongPair entry : entries) {
-                long entryId = entry.first;
-                if (entryId > lastEntryId) {
-                    // No more entries out of order
                     if (log.isDebugEnabled()) {
-                        log.debug("No more out of order: ledger: {} -- entry: {} -- last-in-ledger: {}", new Object[] {
-                                ledgerId, entryId, lastEntryId });
-                    }
-                    break;
-                }
-
-                ++entriesOutOfOrder;
-
-                if (log.isDebugEnabled()) {
-                    log.debug("Storing entry out of order: ledger: {} -- entry: {} -- last-in-ledger: {}",
-                            new Object[] { ledgerId, entryId, lastEntryId });
-                }
-
-                if (olderIndexPage == null || !olderIndexPage.includes(entryId)) {
-                    // Find the correct ledger index page to update
-                    try {
-                        olderIndexPage = getLedgerIndexPage(ledgerId, entryId);
-                    } catch (NoEntryException e) {
-                        // If we cannot find the index page, we need to create a new one
-                        olderIndexPage = new LedgerIndexPage(ledgerId, Lists.newArrayList(entry));
+                        log.debug("Add locations for ledger {} -- locations: {}", ledgerId, entries.size());
                     }
 
-                    batch.put(olderIndexPage.getKey(), olderIndexPage.getValue());
+                    // First check entries that arrived out of order
+                    int entriesOutOfOrder = 0;
+                    for (LongPair entry : entries) {
+                        long entryId = entry.first;
+                        if (entryId > lastEntryId) {
+                            // No more entries out of order
+                            if (log.isDebugEnabled()) {
+                                log.debug("No more out of order: ledger: {} -- entry: {} -- last-in-ledger: {}",
+                                        new Object[] { ledgerId, entryId, lastEntryId });
+                            }
+                            break;
+                        }
+
+                        ++entriesOutOfOrder;
+
+                        if (log.isDebugEnabled()) {
+                            log.debug("Storing entry out of order: ledger: {} -- entry: {} -- last-in-ledger: {}",
+                                    new Object[] { ledgerId, entryId, lastEntryId });
+                        }
+
+                        if (olderIndexPage == null || !olderIndexPage.includes(entryId)) {
+                            // Find the correct ledger index page to update
+                            try {
+                                olderIndexPage = getLedgerIndexPage(ledgerId, entryId);
+                            } catch (NoEntryException e) {
+                                // If we cannot find the index page, we need to create a new one
+                                olderIndexPage = new LedgerIndexPage(ledgerId, Lists.newArrayList(entry));
+                            }
+
+                            batch.put(olderIndexPage.getKey(), olderIndexPage.getValue());
+                        }
+
+                        olderIndexPage.setPosition(entryId, entry.second);
+                    }
+
+                    if (entriesOutOfOrder > 0) {
+                        // Remove the entries out of order, since they were already inserted here above
+                        entries = entries.subList(entriesOutOfOrder, entries.size());
+                    }
+
+                    if (entries.isEmpty()) {
+                        // All the entries for this ledger were filtered out
+                        return;
+                    }
+
+                    LedgerIndexPage indexPage = new LedgerIndexPage(ledgerId, entries);
+
+                    if (log.isDebugEnabled()) {
+                        log.debug("Adding page to index: {}", indexPage);
+                    }
+                    batch.put(indexPage.getKey(), indexPage.getValue());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
-
-                olderIndexPage.setPosition(entryId, entry.second);
             }
-
-            if (entriesOutOfOrder > 0) {
-                // Remove the entries out of order, since they were already inserted here above
-                entries = entries.subList(entriesOutOfOrder, entries.size());
-            }
-
-            if (entries.isEmpty()) {
-                // All the entries for this ledger were filtered out
-                continue;
-            }
-
-            LedgerIndexPage indexPage = new LedgerIndexPage(ledgerId, entries);
-
-            if (log.isDebugEnabled()) {
-                log.debug("Adding page to index: {}", indexPage);
-            }
-            batch.put(indexPage.getKey(), indexPage.getValue());
-        }
+        });
 
         batch.flush();
     }
@@ -343,7 +347,7 @@ public class EntryLocationIndex implements Closeable {
     public void flush() throws IOException {
         Batch batch = locationsDb.newBatch();
 
-        List<Long> deletedLedgersList = Lists.newArrayList(deletedLedgers);
+        Set<Long> deletedLedgersList = deletedLedgers.items();
         for (Long ledgerId : deletedLedgersList) {
             LongPair firstKey = new LongPair(ledgerId, 0);
             LongPair lastKey = new LongPair(ledgerId + 1, 0);
