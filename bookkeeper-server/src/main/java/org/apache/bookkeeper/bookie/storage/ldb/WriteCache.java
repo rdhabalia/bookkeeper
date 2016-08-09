@@ -71,7 +71,7 @@ public class WriteCache implements Closeable {
         int size = entry.readableBytes();
 
         // Align to 64 bytes so that different threads will not contend the same L1 cache line
-        int alignedSize = align(size);
+        int alignedSize = align64(size);
 
         long offset;
         int localOffset;
@@ -201,7 +201,7 @@ public class WriteCache implements Closeable {
 
     private static final int ALIGN_64_MASK = ~(64 - 1);
 
-    private static int align(int size) {
+    static int align64(int size) {
         return (size + 64 - 1) & ALIGN_64_MASK;
     }
 
