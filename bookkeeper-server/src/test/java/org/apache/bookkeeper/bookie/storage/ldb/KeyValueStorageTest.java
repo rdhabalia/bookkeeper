@@ -30,7 +30,7 @@ public class KeyValueStorageTest {
 
     @Parameters
     public static Collection<Object[]> configs() {
-        return Arrays.asList(new Object[][] { {KeyValueStorageLevelDB.factory }, {KeyValueStorageRocksDB.factory}});
+        return Arrays.asList(new Object[][] { {KeyValueStorageRocksDB.factory}});
     }
 
     public KeyValueStorageTest(KeyValueStorageFactory storageFactory) {

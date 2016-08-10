@@ -4,8 +4,6 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.Set;
 
 import org.apache.bookkeeper.bookie.Bookie;
@@ -17,30 +15,14 @@ import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.commons.io.FileUtils;
 import org.junit.Assert;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.Unpooled;
 
-@RunWith(Parameterized.class)
 public class LocationsIndexRebuildTest {
-
-    private final boolean rocksDBEnabled;
-
-    @Parameters
-    public static Collection<Object[]> configs() {
-        return Arrays.asList(new Object[][] { { false }, { true } });
-    }
-
-    public LocationsIndexRebuildTest(boolean rocksDBEnabled) {
-        this.rocksDBEnabled = rocksDBEnabled;
-    }
 
     CheckpointSource checkpointSource = new CheckpointSource() {
         @Override
@@ -66,7 +48,6 @@ public class LocationsIndexRebuildTest {
         ServerConfiguration conf = new ServerConfiguration();
         conf.setLedgerDirNames(new String[] { tmpDir.toString() });
         conf.setLedgerStorageClass(DbLedgerStorage.class.getName());
-        conf.setProperty(DbLedgerStorage.ROCKSDB_ENABLED, rocksDBEnabled);
         conf.setAllowLoopback(true);
         LedgerDirsManager ledgerDirsManager = new LedgerDirsManager(conf, conf.getLedgerDirs());
 

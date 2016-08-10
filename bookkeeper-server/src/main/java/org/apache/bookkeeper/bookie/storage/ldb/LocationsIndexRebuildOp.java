@@ -74,16 +74,12 @@ public class LocationsIndexRebuildOp {
         EntryLogger entryLogger = new EntryLogger(conf, new LedgerDirsManager(conf, conf.getLedgerDirs()));
         Set<Long> entryLogs = entryLogger.getEntryLogsSet();
 
-        boolean rocksDBEnabled = conf.getBoolean(DbLedgerStorage.ROCKSDB_ENABLED, false);
-        KeyValueStorageFactory storageFactory = rocksDBEnabled ? //
-                KeyValueStorageRocksDB.factory //
-                : KeyValueStorageLevelDB.factory;
         String locationsDbPath = FileSystems.getDefault().getPath(basePath, "locations").toFile().toString();
 
-        Set<Long> activeLedgers = getActiveLedgers(conf, storageFactory, basePath);
+        Set<Long> activeLedgers = getActiveLedgers(conf, KeyValueStorageRocksDB.factory, basePath);
         LOG.info("Found {} active ledgers in ledger manager", activeLedgers.size());
 
-        KeyValueStorage newIndex = storageFactory.newKeyValueStorage(locationsDbPath, DbConfigType.Huge, conf);
+        KeyValueStorage newIndex = KeyValueStorageRocksDB.factory.newKeyValueStorage(locationsDbPath, DbConfigType.Huge, conf);
 
         int totalEntryLogs = entryLogs.size();
         int completedEntryLogs = 0;

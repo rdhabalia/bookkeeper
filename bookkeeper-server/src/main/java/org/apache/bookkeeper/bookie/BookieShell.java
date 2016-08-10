@@ -24,7 +24,6 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -36,7 +35,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.SortedMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -46,11 +44,6 @@ import org.apache.bookkeeper.bookie.EntryLogger.EntryLogScanner;
 import org.apache.bookkeeper.bookie.Journal.JournalScanner;
 import org.apache.bookkeeper.bookie.storage.ldb.DbLedgerStorage;
 import org.apache.bookkeeper.bookie.storage.ldb.EntryLocationIndex;
-import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorage;
-import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorage.CloseableIterator;
-import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageFactory.DbConfigType;
-import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageLevelDB;
-import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageRocksDB;
 import org.apache.bookkeeper.bookie.storage.ldb.LocationsIndexRebuildOp;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
@@ -1658,87 +1651,6 @@ public class BookieShell implements Tool {
     }
 
     /**
-     * Convert bookie indexes on DbLedgerStorage format from RocksDB to LevelDB
-     */
-    class ConvertRocksDbToLevelDbCmd extends MyCommand {
-        Options opts = new Options();
-
-        public ConvertRocksDbToLevelDbCmd() {
-            super(CMD_CONVERT_ROCKSDB_TO_LEVELDB_STORAGE);
-        }
-
-        @Override
-        Options getOptions() {
-            return opts;
-        }
-
-        @Override
-        String getDescription() {
-            return "Convert RocksDB indexed back to LevelDB format";
-        }
-
-        String getUsage() {
-            return CMD_CONVERT_ROCKSDB_TO_LEVELDB_STORAGE;
-        }
-
-        @Override
-        int runCmd(CommandLine cmdLine) throws Exception {
-            LOG.info("=== Converting RocksDB indexes to LevelDB ===");
-            LedgerDirsManager ledgerDirsManager = new LedgerDirsManager(bkConf,
-                    bkConf.getLedgerDirs());
-            String baseDir = ledgerDirsManager.getAllLedgerDirs().get(0).toString();
-            FileSystem fileSystem = FileSystems.getDefault();
-
-            // Convert ledgers db
-            LOG.info("-- Converting ledgers DB --");
-            String rocksDbledgersPath = fileSystem.getPath(baseDir, "ledgers").toFile().toString();
-            String levelDbLedgersPath = fileSystem.getPath(baseDir, "ledgers.ldb").toFile().toString();
-
-            KeyValueStorage rocksDbLedgersStorage = new KeyValueStorageRocksDB(rocksDbledgersPath, DbConfigType.Small, bkConf);
-            KeyValueStorage levelDbLedgersStorage = new KeyValueStorageLevelDB(levelDbLedgersPath);
-
-            copyDatabase(rocksDbLedgersStorage, levelDbLedgersStorage);
-            rocksDbLedgersStorage.close();
-            levelDbLedgersStorage.close();
-            LOG.info("-- Converted ledgers DB --");
-
-            LOG.info("-- Converting locations DB --");
-            String rocksDbLocationsPath = fileSystem.getPath(baseDir, "locations").toFile().toString();
-            String levelDbLocationsPath = fileSystem.getPath(baseDir, "locations.ldb").toFile().toString();
-
-            KeyValueStorage rocksDbLocationsStorage = new KeyValueStorageRocksDB(rocksDbLocationsPath, DbConfigType.Huge, bkConf);
-            KeyValueStorage levelDbLocationsStorage = new KeyValueStorageLevelDB(levelDbLocationsPath);
-
-            copyDatabase(rocksDbLocationsStorage, levelDbLocationsStorage);
-            rocksDbLocationsStorage.close();
-            levelDbLocationsStorage.close();
-            LOG.info("-- Converted locations DB --");
-
-            // Rename databases and keep backup
-            Files.move(fileSystem.getPath(baseDir, "ledgers"), fileSystem.getPath(baseDir, "ledgers.rocksdb.backup"));
-            Files.move(fileSystem.getPath(baseDir, "ledgers.ldb"), fileSystem.getPath(baseDir, "ledgers"));
-
-            Files.move(fileSystem.getPath(baseDir, "locations"), fileSystem.getPath(baseDir, "locations.rocksdb.backup"));
-            Files.move(fileSystem.getPath(baseDir, "locations.ldb"), fileSystem.getPath(baseDir, "locations"));
-
-            LOG.info("---- Done Converting ----");
-            return 0;
-        }
-
-        private void copyDatabase(KeyValueStorage source, KeyValueStorage target) throws Exception {
-            CloseableIterator<Entry<byte[], byte[]>> iterator = source.iterator();
-            try {
-                while (iterator.hasNext()) {
-                    Entry<byte[], byte[]> entry = iterator.next();
-                    target.put(entry.getKey(), entry.getValue());
-                }
-            } finally {
-                iterator.close();
-            }
-        }
-    }
-
-    /**
      * Convert bookie indexes from DbLedgerStorage to InterleavedStorage format
      */
     class ConvertToInterleavedStorageCmd extends MyCommand {
@@ -1896,7 +1808,6 @@ public class BookieShell implements Tool {
         commands.put(CMD_UPDATELEDGER, new UpdateLedgerCmd());
         commands.put(CMD_CONVERT_TO_DB_STORAGE, new ConvertToDbStorageCmd());
         commands.put(CMD_CONVERT_TO_INTERLEAVED_STORAGE, new ConvertToInterleavedStorageCmd());
-        commands.put(CMD_CONVERT_ROCKSDB_TO_LEVELDB_STORAGE, new ConvertRocksDbToLevelDbCmd());
         commands.put(CMD_REBUILD_DB_LEDGER_LOCATIONS_INDEX, new RebuildDbLedgerLocationsIndexCmd());
         commands.put(CMD_HELP, new HelpCmd());
     }
