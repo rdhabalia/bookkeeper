@@ -50,9 +50,13 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
     private final RocksDB db;
 
     private final WriteOptions Sync;
+    private final WriteOptions DontSync;
 
     private final ReadOptions Cache;
     private final ReadOptions DontCache;
+
+    private final WriteBatch EmptyBatch;
+
     private static final String ROCKSDB_MARKER = "rocksdb-enabled";
 
     private static final String ROCKSDB_LOG_LEVEL = "dbStorage_rocksDB_logLevel";
@@ -69,7 +73,8 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
         this(path, dbConfigType, conf, false);
     }
 
-    public KeyValueStorageRocksDB(String path, DbConfigType dbConfigType, ServerConfiguration conf, boolean readOnly) throws IOException {
+    public KeyValueStorageRocksDB(String path, DbConfigType dbConfigType, ServerConfiguration conf, boolean readOnly)
+            throws IOException {
         try {
             RocksDB.loadLibrary();
         } catch (Throwable t) {
@@ -155,23 +160,28 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
         }
 
         Sync = new WriteOptions().setSync(true);
+        DontSync = new WriteOptions().setSync(false);
 
         Cache = new ReadOptions().setFillCache(true);
         DontCache = new ReadOptions().setFillCache(false);
+
+        EmptyBatch = new WriteBatch();
     }
 
     @Override
     public void close() throws IOException {
         db.close();
         Sync.dispose();
+        DontSync.dispose();
         Cache.dispose();
         DontCache.dispose();
+        EmptyBatch.dispose();
     }
 
     @Override
     public void put(byte[] key, byte[] value) throws IOException {
         try {
-            db.put(Sync, key, value);
+            db.put(DontSync, key, value);
         } catch (RocksDBException e) {
             throw new IOException("Error in RocksDB put", e);
         }
@@ -187,9 +197,24 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
     }
 
     @Override
+    public int get(byte[] key, byte[] value) throws IOException {
+        try {
+            int res = db.get(key, value);
+            if (res == RocksDB.NOT_FOUND) {
+                return -1;
+            } else if (res > value.length) {
+                throw new IOException("Value array is too small to fit the result");
+            } else {
+                return res;
+            }
+        } catch (RocksDBException e) {
+            throw new IOException("Error in RocksDB get", e);
+        }
+    }
+
+    @Override
     public Entry<byte[], byte[]> getFloor(byte[] key) throws IOException {
         RocksIterator iterator = db.newIterator(Cache);
-
         try {
             // Position the iterator on the record whose key is >= to the supplied key
             iterator.seek(key);
@@ -219,11 +244,37 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
     }
 
     @Override
+    public Entry<byte[], byte[]> getCeil(byte[] key) throws IOException {
+        RocksIterator iterator = db.newIterator(Cache);
+        try {
+            // Position the iterator on the record whose key is >= to the supplied key
+            iterator.seek(key);
+
+            if (iterator.isValid()) {
+                return new EntryWrapper(iterator.key(), iterator.value());
+            } else {
+                return null;
+            }
+        } finally {
+            iterator.dispose();
+        }
+    }
+
+    @Override
     public void delete(byte[] key) throws IOException {
         try {
-            db.remove(Sync, key);
+            db.remove(DontSync, key);
         } catch (RocksDBException e) {
             throw new IOException("Error in RocksDB delete", e);
+        }
+    }
+
+    @Override
+    public void sync() throws IOException {
+        try {
+            db.write(Sync, EmptyBatch);
+        } catch (RocksDBException e) {
+            throw new IOException(e);
         }
     }
 
@@ -332,6 +383,11 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
                 dispose();
             }
         }
+
+        @Override
+        public void close() {
+            dispose();
+        }
     }
 
     private static class EntryWrapper implements Entry<byte[], byte[]> {
@@ -339,6 +395,8 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
         private byte[] value;
 
         public EntryWrapper() {
+            key = null;
+            value = null;
         }
 
         public EntryWrapper(byte[] key, byte[] value) {
@@ -396,10 +454,11 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
 
         // Copy into new database. Write in batches to speed up the insertion
         CloseableIterator<Entry<byte[], byte[]>> iterator = source.iterator();
+        Batch batch = target.newBatch();
         try {
             final int maxBatchSize = 10000;
             int currentBatchSize = 0;
-            Batch batch = target.newBatch();
+
 
             while (iterator.hasNext()) {
                 Entry<byte[], byte[]> entry = iterator.next();
@@ -407,13 +466,14 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
                 batch.put(entry.getKey(), entry.getValue());
                 if (++currentBatchSize == maxBatchSize) {
                     batch.flush();
-                    batch = target.newBatch();
+                    batch.clear();
                     currentBatchSize = 0;
                 }
             }
 
             batch.flush();
         } finally {
+            batch.close();
             iterator.close();
             source.close();
             target.close();

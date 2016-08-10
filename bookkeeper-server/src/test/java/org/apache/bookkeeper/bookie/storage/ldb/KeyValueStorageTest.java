@@ -2,8 +2,6 @@ package org.apache.bookkeeper.bookie.storage.ldb;
 
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertTrue;
-import static org.apache.bookkeeper.bookie.storage.ldb.LedgerMetadataIndex.fromArray;
-import static org.apache.bookkeeper.bookie.storage.ldb.LedgerMetadataIndex.toArray;
 
 import java.io.File;
 import java.util.Arrays;
@@ -30,7 +28,7 @@ public class KeyValueStorageTest {
 
     @Parameters
     public static Collection<Object[]> configs() {
-        return Arrays.asList(new Object[][] { {KeyValueStorageRocksDB.factory}});
+        return Arrays.asList(new Object[][] { { KeyValueStorageRocksDB.factory } });
     }
 
     public KeyValueStorageTest(KeyValueStorageFactory storageFactory) {
@@ -38,12 +36,23 @@ public class KeyValueStorageTest {
         this.configuration = new ServerConfiguration();
     }
 
+    private static long fromArray(byte[] array) {
+        return ArrayUtil.getLong(array, 0);
+    }
+
+    private static byte[] toArray(long n) {
+        byte[] b = new byte[8];
+        ArrayUtil.setLong(b, 0, n);
+        return b;
+    }
+
     @Test
     public void simple() throws Exception {
         File tmpDir = File.createTempFile("bookie", "test");
         tmpDir.delete();
 
-        KeyValueStorage db = storageFactory.newKeyValueStorage(tmpDir.getAbsolutePath(), DbConfigType.Small, configuration);
+        KeyValueStorage db = storageFactory.newKeyValueStorage(tmpDir.getAbsolutePath(), DbConfigType.Small,
+                configuration);
 
         assertEquals(null, db.getFloor(toArray(3)));
         assertEquals(0, db.count());
@@ -135,6 +144,7 @@ public class KeyValueStorageTest {
         assertEquals(null, db.get(toArray(12)));
         assertEquals(null, db.get(toArray(13)));
         assertEquals(14l, fromArray(db.get(toArray(14))));
+        batch.close();
 
         db.close();
         tmpDir.delete();
