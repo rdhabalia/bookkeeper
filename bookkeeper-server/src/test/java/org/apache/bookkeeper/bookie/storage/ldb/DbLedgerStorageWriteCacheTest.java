@@ -41,7 +41,7 @@ public class DbLedgerStorageWriteCacheTest {
         @Override
         public synchronized void flush() throws IOException {
             // Swap the write caches and block indefinitely to simulate a slow disk
-            EntryCache tmp = writeCacheBeingFlushed;
+            WriteCache tmp = writeCacheBeingFlushed;
             writeCacheBeingFlushed = writeCache;
             writeCache = tmp;
 
@@ -95,7 +95,7 @@ public class DbLedgerStorageWriteCacheTest {
         assertEquals("key", new String(storage.readMasterKey(4)));
 
         // Add enough entries to fill the 1st write cache
-        for (int i = 0; i < 12; i++) {
+        for (int i = 0; i < 5; i++) {
             ByteBuf entry = Unpooled.buffer(100 * 1024 + 2 * 8);
             entry.writeLong(4); // ledger id
             entry.writeLong(i); // entry id
@@ -103,16 +103,14 @@ public class DbLedgerStorageWriteCacheTest {
             storage.addEntry(entry);
         }
 
-        // Flushing should be started in background, no exceptions are expected until both caches are full
-        Thread.sleep(100);
-
-        for (int i = 0; i < 11; i++) {
+        for (int i = 0; i < 5; i++) {
             ByteBuf entry = Unpooled.buffer(100 * 1024 + 2 * 8);
             entry.writeLong(4); // ledger id
-            entry.writeLong(11 + i); // entry id
+            entry.writeLong(5 + i); // entry id
             entry.writeZero(100 * 1024);
             storage.addEntry(entry);
         }
+
 
         // Next add should fail for cache full
         ByteBuf entry = Unpooled.buffer(100 * 1024 + 2 * 8);

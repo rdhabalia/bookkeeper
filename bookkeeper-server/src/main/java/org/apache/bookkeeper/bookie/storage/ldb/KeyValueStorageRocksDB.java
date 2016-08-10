@@ -21,6 +21,7 @@ import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.ChecksumType;
 import org.rocksdb.CompressionType;
+import org.rocksdb.FlushOptions;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.Options;
 import org.rocksdb.ReadOptions;

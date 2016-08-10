@@ -172,29 +172,19 @@ public class DbLedgerStorageTest {
         storage.deleteLedger(4);
         assertEquals(false, storage.ledgerExists(4));
 
-        try {
-            storage.getEntry(4, 4);
-            fail("Should have thrown exception");
-        } catch (NoEntryException e) {
-            // ok
-        }
+        // Should not throw exception event if the ledger was deleted
+        storage.getEntry(4, 4);
 
         storage.addEntry(Unpooled.wrappedBuffer(entry2));
         res = storage.getEntry(4, BookieProtocol.LAST_ADD_CONFIRMED);
-        assertEquals(entry2, res);
+        assertEquals(entry4, res);
 
         // Get last entry from storage
         storage.flush();
 
-        res = storage.getEntry(4, BookieProtocol.LAST_ADD_CONFIRMED);
-        assertEquals(entry2, res);
-
-        storage.setMasterKey(4, "key".getBytes());
-
-        storage.deleteLedger(4);
         try {
-            storage.getEntry(4, 2);
-            fail("Should have thrown exception");
+            storage.getEntry(4, 4);
+            fail("Should have thrown exception since the ledger was deleted");
         } catch (NoEntryException e) {
             // ok
         }
@@ -421,9 +411,9 @@ public class DbLedgerStorageTest {
         storage.addEntry(entry0);
         storage.addEntry(entry1);
 
-        storage.flush();
-
         assertEquals(entry0, storage.getEntry(1, 0));
         assertEquals(entry1, storage.getEntry(1, 1));
+
+        storage.flush();
     }
 }
