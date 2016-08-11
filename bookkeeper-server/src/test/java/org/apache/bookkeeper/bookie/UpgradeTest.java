@@ -24,6 +24,7 @@ package org.apache.bookkeeper.bookie;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -81,7 +82,7 @@ public class UpgradeTest extends BookKeeperClusterTestCase {
         long logId = System.currentTimeMillis();
         JournalChannel jc = new JournalChannel(journalDir, logId);
 
-        FileChannel bc = jc.getChannel();
+        BufferedChannel bc = jc.getBufferedChannel();
 
         long ledgerId = 1;
         byte[] data = new byte[1024];
@@ -92,14 +93,14 @@ public class UpgradeTest extends BookKeeperClusterTestCase {
             ByteBuf packet = ClientUtil.generatePacket(ledgerId, i, lastConfirmed,
                                                           i*data.length, data);
             lastConfirmed = i;
-            ByteBuffer lenBuff = ByteBuffer.allocate(4);
-            lenBuff.putInt(packet.readableBytes());
-            lenBuff.flip();
+            ByteBuf lenBuff = Unpooled.buffer(4);
+            lenBuff.writeInt(packet.readableBytes());
 
             bc.write(lenBuff);
-            bc.write(packet.nioBuffer());
+            bc.write(packet);
             packet.release();
         }
+        bc.flush(true);
 
         return jc;
     }
@@ -109,7 +110,7 @@ public class UpgradeTest extends BookKeeperClusterTestCase {
         writeJournal(d, 100, "foobar".getBytes()).close();
         return d;
     }
-              
+
     static File newV1LedgerDirectory() throws Exception {
         File d = IOUtils.createTempDir("bookie", "tmpdir");
         writeLedgerDir(d, "foobar".getBytes());

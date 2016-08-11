@@ -32,7 +32,6 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -54,7 +53,6 @@ import org.apache.bookkeeper.util.DaemonThreadFactory;
 import org.apache.bookkeeper.util.IOUtils;
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.UnboundArrayBlockingQueue;
-import org.apache.bookkeeper.util.ZeroBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -290,7 +288,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
         static QueueEntry create(ByteBuf entry, long ledgerId, long entryId, WriteCallback cb, Object ctx,
                 long enqueueTime, OpStatsLogger journalAddEntryStats) {
             QueueEntry qe = RECYCLER.get();
-            qe.entry = entry.duplicate();
+            qe.entry = entry;
             qe.cb = cb;
             qe.ctx = ctx;
             qe.ledgerId = ledgerId;
@@ -512,9 +510,9 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
 
     final static int PADDING_MASK = -0x100;
 
-    static void writePaddingBytes(JournalChannel jc, ByteBuffer paddingBuffer, int journalAlignSize)
+    static void writePaddingBytes(JournalChannel jc, ByteBuf paddingBuffer, int journalAlignSize)
             throws IOException {
-        int bytesToAlign = (int) (jc.fc.position() % journalAlignSize);
+        int bytesToAlign = (int) (jc.bc.position() % journalAlignSize);
         if (0 != bytesToAlign) {
             int paddingBytes = journalAlignSize - bytesToAlign;
             if (paddingBytes < 8) {
@@ -524,16 +522,15 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
             }
             paddingBuffer.clear();
             // padding mask
-            paddingBuffer.putInt(PADDING_MASK);
+            paddingBuffer.writeInt(PADDING_MASK);
             // padding len
-            paddingBuffer.putInt(paddingBytes);
+            paddingBuffer.writeInt(paddingBytes);
             // padding bytes
-            paddingBuffer.position(8 + paddingBytes);
+            paddingBuffer.writerIndex(paddingBuffer.writerIndex() + paddingBytes);
 
-            paddingBuffer.flip();
-            jc.preAllocIfNeeded(paddingBuffer.limit());
+            jc.preAllocIfNeeded(paddingBuffer.readableBytes());
             // write padding bytes
-            jc.fc.write(paddingBuffer);
+            jc.bc.write(paddingBuffer);
         }
     }
 
@@ -580,6 +577,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
     private final OpStatsLogger journalAddEntryStats;
     private final OpStatsLogger journalSyncStats;
     private final OpStatsLogger journalCreationStats;
+    private final OpStatsLogger journalFlushStats;
     private final OpStatsLogger journalProcessTimeStats;
     private final OpStatsLogger journalQueueStats;
     private final OpStatsLogger forceWriteGroupingCountStats;
@@ -625,6 +623,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
         journalAddEntryStats = statsLogger.getOpStatsLogger(JOURNAL_ADD_ENTRY);
         journalSyncStats = statsLogger.getOpStatsLogger(JOURNAL_SYNC);
         journalCreationStats = statsLogger.getOpStatsLogger(JOURNAL_CREATION_LATENCY);
+        journalFlushStats = statsLogger.getOpStatsLogger(JOURNAL_FLUSH_LATENCY);
         journalQueueStats = statsLogger.getOpStatsLogger(JOURNAL_QUEUE_LATENCY);
         journalProcessTimeStats = statsLogger.getOpStatsLogger(JOURNAL_PROCESS_TIME_LATENCY);
         forceWriteGroupingCountStats = statsLogger.getOpStatsLogger(JOURNAL_FORCE_WRITE_GROUPING_COUNT);
@@ -810,9 +809,8 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
      * record an add entry operation in journal
      */
     public void logAddEntry(ByteBuf entry, WriteCallback cb, Object ctx) {
-        long ledgerId = entry.readLong();
-        long entryId = entry.readLong();
-        entry.resetReaderIndex();
+        long ledgerId = entry.getLong(entry.readerIndex());
+        long entryId = entry.getLong(entry.readerIndex() + 8);
         journalQueueSize.inc();
 
         // Retain entry until it gets written to journal
@@ -848,13 +846,15 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
     public void run() {
         LOG.info("Starting journal on {}", journalDirectory);
         RecyclableArrayList toFlush = RecyclableArrayList.newInstance();
-        ByteBuffer lenBuff = ByteBuffer.allocate(4);
-        ByteBuffer paddingBuff = ByteBuffer.allocate(2 * conf.getJournalAlignmentSize());
-        ZeroBuffer.put(paddingBuff);
+        ByteBuf paddingBuff = Unpooled.directBuffer(2 * conf.getJournalAlignmentSize());
+        paddingBuff.setZero(0, paddingBuff.capacity());
+        ByteBuf lenBuff = Unpooled.directBuffer(4);
+
         int journalFormatVersionToWrite = conf.getJournalFormatVersionToWrite();
         JournalChannel logFile = null;
         forceWriteThread.start();
         Stopwatch journalCreationWatcher = new Stopwatch();
+        Stopwatch journalFlushWatcher = new Stopwatch();
         long batchSize = 0;
         try {
             List<Long> journalIds = listJournalIds(journalDirectory, null);
@@ -862,7 +862,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
             // could only be used to measure elapsed time.
             // http://docs.oracle.com/javase/1.5.0/docs/api/java/lang/System.html#nanoTime%28%29
             long logId = journalIds.isEmpty() ? System.currentTimeMillis() : journalIds.get(journalIds.size() - 1);
-            FileChannel fc = null;
+            BufferedChannel bc = null;
             long lastFlushPosition = 0;
             boolean groupWhenTimeout = false;
 
@@ -885,9 +885,9 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
                     journalCreationStats.registerSuccessfulEvent(
                             journalCreationWatcher.stop().elapsedTime(TimeUnit.NANOSECONDS), TimeUnit.NANOSECONDS);
 
-                    fc = logFile.getChannel();
-                    
-                    lastFlushPosition = fc.position();
+                    bc = logFile.getBufferedChannel();
+
+                    lastFlushPosition = bc.position();
                 }
 
                 if (qe == null) {
@@ -907,7 +907,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
                         }
                         qe = queue.poll(pollWaitTimeNanos, TimeUnit.NANOSECONDS);
                         dequeueStartTime = MathUtils.nowInNano();
-                        
+
                         if (qe != null) {
                             journalQueueStats.registerSuccessfulEvent(MathUtils.elapsedNanos(qe.enqueueTime), TimeUnit.NANOSECONDS);
                         }
@@ -930,7 +930,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
                             flushMaxWaitCounter.inc();
                         } else if (qe != null &&
                                 ((bufferedEntriesThreshold > 0 && toFlush.size() > bufferedEntriesThreshold) ||
-                                 (fc.position() > lastFlushPosition + bufferedWritesThreshold))) {
+                                 (bc.position() > lastFlushPosition + bufferedWritesThreshold))) {
                             // 2. If we have buffered more than the buffWriteThreshold or bufferedEntriesThreshold
                             shouldFlush = true;
                             flushMaxOutstandingBytesCounter.inc();
@@ -948,7 +948,11 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
                             if (journalFormatVersionToWrite >= JournalChannel.V5) {
                                 writePaddingBytes(logFile, paddingBuff, conf.getJournalAlignmentSize());
                             }
-                            lastFlushPosition = fc.position();
+                            journalFlushWatcher.reset().start();
+                            bc.flush(false);
+                            lastFlushPosition = bc.position();
+                            journalFlushStats.registerSuccessfulEvent(
+                                    journalFlushWatcher.stop().elapsedTime(TimeUnit.NANOSECONDS), TimeUnit.NANOSECONDS);
 
                             // Trace the lifetime of entries through persistence
                             if (LOG.isDebugEnabled()) {
@@ -983,27 +987,19 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
                     continue;
                 }
 
-                journalWriteBytes.add(qe.entry.readableBytes());
+                int entrySize = qe.entry.readableBytes();
+                journalWriteBytes.add(entrySize);
                 journalQueueSize.dec();
 
-                batchSize += (4 + qe.entry.readableBytes());
-
-                lenBuff.clear();
-                lenBuff.putInt(qe.entry.readableBytes());
-                lenBuff.flip();
+                batchSize += (4 + entrySize);
 
                 // preAlloc based on size
-                logFile.preAllocIfNeeded(4 + qe.entry.readableBytes());
+                logFile.preAllocIfNeeded(4 + entrySize);
 
-                //
-                // we should be doing the following, but then we run out of
-                // direct byte buffers
-                // logFile.write(new ByteBuffer[] { lenBuff, qe.entry });
-                fc.write(lenBuff);
-                ByteBuffer entryContent = qe.entry.nioBuffer();
-                while (entryContent.hasRemaining()) {
-                   fc.write(entryContent);
-                }
+                lenBuff.clear();
+                lenBuff.writeInt(entrySize);
+                bc.write(lenBuff);
+                bc.write(qe.entry);
                 qe.entry.release();
 
                 toFlush.add(qe);
