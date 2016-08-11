@@ -95,6 +95,7 @@ import com.google.common.util.concurrent.AbstractFuture;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 
@@ -2124,7 +2125,7 @@ public class BookieShell implements Tool {
                 return true;
             }
             @Override
-            public void process(long ledgerId, long startPos, ByteBuffer entry) {
+            public void process(long ledgerId, long startPos, ByteBuf entry) {
                 formatEntry(startPos, entry, printMsg);
             }
         });
@@ -2148,7 +2149,7 @@ public class BookieShell implements Tool {
                     System.out.println("Journal Version : " + journalVersion);
                     printJournalVersion = true;
                 }
-                formatEntry(offset, entry, printMsg);
+                formatEntry(offset, Unpooled.wrappedBuffer(entry), printMsg);
             }
         });
     }
@@ -2174,17 +2175,17 @@ public class BookieShell implements Tool {
      * @param printMsg
      *          Whether printing the message body
      */
-    private void formatEntry(long pos, ByteBuffer recBuff, boolean printMsg) {
-        long ledgerId = recBuff.getLong();
-        long entryId = recBuff.getLong();
-        int entrySize = recBuff.limit();
+    private void formatEntry(long pos, ByteBuf recBuff, boolean printMsg) {
+        int entrySize = recBuff.readableBytes();
+        long ledgerId = recBuff.readLong();
+        long entryId = recBuff.readLong();
 
         System.out.println("--------- Lid=" + ledgerId + ", Eid=" + entryId
                          + ", ByteOffset=" + pos + ", EntrySize=" + entrySize + " ---------");
         if (entryId == Bookie.METAENTRY_ID_LEDGER_KEY) {
-            int masterKeyLen = recBuff.getInt();
+            int masterKeyLen = recBuff.readInt();
             byte[] masterKey = new byte[masterKeyLen];
-            recBuff.get(masterKey);
+            recBuff.readBytes(masterKey);
             System.out.println("Type:           META");
             System.out.println("MasterKey:      " + bytes2Hex(masterKey));
             System.out.println();
@@ -2197,7 +2198,7 @@ public class BookieShell implements Tool {
             return;
         }
         // process a data entry
-        long lastAddConfirmed = recBuff.getLong();
+        long lastAddConfirmed = recBuff.readLong();
         System.out.println("Type:           DATA");
         System.out.println("LastConfirmed:  " + lastAddConfirmed);
         if (!printMsg) {
@@ -2205,12 +2206,12 @@ public class BookieShell implements Tool {
             return;
         }
         // skip digest checking
-        recBuff.position(32 + 8);
+        recBuff.skipBytes(8);
         System.out.println("Data:");
         System.out.println();
         try {
-            byte[] ret = new byte[recBuff.remaining()];
-            recBuff.get(ret);
+            byte[] ret = new byte[recBuff.readableBytes()];
+            recBuff.readBytes(ret);
             formatter.formatEntry(ret);
         } catch (Exception e) {
             System.out.println("N/A. Corrupted.");
