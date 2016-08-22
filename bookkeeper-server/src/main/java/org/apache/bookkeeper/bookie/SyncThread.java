@@ -128,7 +128,7 @@ class SyncThread {
             LOG.error("No writeable ledger directories", e);
             dirsListener.allDisksFull();
             return;
-        } catch (Exception e) {
+        } catch (IOException e) {
             LOG.error("Exception flushing ledgers", e);
             return;
         }
