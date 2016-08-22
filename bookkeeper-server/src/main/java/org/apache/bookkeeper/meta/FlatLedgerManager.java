@@ -19,8 +19,11 @@ package org.apache.bookkeeper.meta;
  */
 
 import java.io.IOException;
+import java.util.List;
+import java.util.NavigableSet;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.TreeSet;
 
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.LedgerMetadata;
@@ -162,5 +165,28 @@ class FlatLedgerManager extends AbstractZkLedgerManager {
                 return nextRange;
             }
         };
+    }
+
+    @Override
+    protected NavigableSet<Long> ledgerListToSet(List<String> ledgerNodes, String path) {
+        NavigableSet<Long> zkActiveLedgers = new TreeSet<Long>();
+        for (String ledgerNode : ledgerNodes) {
+            if (isSpecialZnode(ledgerNode)) {
+                continue;
+            }
+            try {
+                // convert the node path to ledger id according to different
+                // ledger manager implementation
+                zkActiveLedgers.add(getLedgerId(path + "/" + ledgerNode));
+            } catch (IOException e) {
+                LOG.warn("Error extracting ledgerId from ZK ledger node: " + ledgerNode);
+                // This is a pretty bad error as it indicates a ledger node in
+                // ZK
+                // has an incorrect format. For now just continue and consider
+                // this as a non-existent ledger.
+                continue;
+            }
+        }
+        return zkActiveLedgers;
     }
 }

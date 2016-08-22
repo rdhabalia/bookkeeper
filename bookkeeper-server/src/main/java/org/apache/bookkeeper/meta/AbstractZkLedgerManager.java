@@ -466,25 +466,7 @@ abstract class AbstractZkLedgerManager implements LedgerManager, Watcher {
      *          the prefix path of the ledger nodes
      * @return ledger id hash set
      */
-    protected NavigableSet<Long> ledgerListToSet(List<String> ledgerNodes, String path) {
-        NavigableSet<Long> zkActiveLedgers = new TreeSet<Long>();
-        for (String ledgerNode : ledgerNodes) {
-            if (isSpecialZnode(ledgerNode)) {
-                continue;
-            }
-            try {
-                // convert the node path to ledger id according to different ledger manager implementation
-                zkActiveLedgers.add(getLedgerId(path + "/" + ledgerNode));
-            } catch (IOException e) {
-                LOG.warn("Error extracting ledgerId from ZK ledger node: " + ledgerNode);
-                // This is a pretty bad error as it indicates a ledger node in ZK
-                // has an incorrect format. For now just continue and consider
-                // this as a non-existent ledger.
-                continue;
-            }
-        }
-        return zkActiveLedgers;
-    }
+    protected abstract NavigableSet<Long> ledgerListToSet(List<String> ledgerNodes, String path);
 
     @Override
     public void close() {

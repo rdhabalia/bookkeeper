@@ -23,6 +23,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.NavigableSet;
 import java.util.NoSuchElementException;
+import java.util.TreeSet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -67,7 +68,8 @@ class HierarchicalLedgerManager extends AbstractZkLedgerManager {
     static final String IDGENERATION_PREFIX = "/" + IDGEN_ZNODE + "/ID-";
     private static final String MAX_ID_SUFFIX = "9999";
     private static final String MIN_ID_SUFFIX = "0000";
-
+    
+    private static final ThreadLocal<StringBuilder> threadLocalNodeBuilder = new ThreadLocal<StringBuilder>();
     // Path to generate global id
     private final String idGenPath;
 
@@ -453,7 +455,8 @@ class HierarchicalLedgerManager extends AbstractZkLedgerManager {
          */
         LedgerRange getLedgerRangeByLevel(final String level1, final String level2)
                 throws IOException {
-            StringBuilder nodeBuilder = new StringBuilder();
+            StringBuilder nodeBuilder = threadLocalNodeBuilder.get();
+            nodeBuilder.setLength(0);
             nodeBuilder.append(ledgerRootPath).append("/")
                        .append(level1).append("/").append(level2);
             String nodePath = nodeBuilder.toString();
@@ -472,5 +475,49 @@ class HierarchicalLedgerManager extends AbstractZkLedgerManager {
             return new LedgerRange(zkActiveLedgers.subSet(getStartLedgerIdByLevel(level1, level2), true,
                                                           getEndLedgerIdByLevel(level1, level2), true));
         }
+    }
+
+    /**
+     * Get all ledger ids in the given zk path.
+     *
+     * @param ledgerNodes
+     *          List of ledgers in the given path
+     *          example:- {L1652, L1653, L1650}
+     * @param path
+     *          The zookeeper path of the ledger ids. The path should start with {@ledgerRootPath}
+     *          example (with ledgerRootPath = /ledgers):- /ledgers/00/0053
+     */
+    @Override
+    protected NavigableSet<Long> ledgerListToSet(List<String> ledgerNodes, String path) {
+        NavigableSet<Long> zkActiveLedgers = new TreeSet<Long>();
+
+        if (!path.startsWith(ledgerRootPath)) {
+            LOG.warn("Ledger path [{}] is not a valid path name, it should start wth {}", path, ledgerRootPath);
+            return zkActiveLedgers;
+        }
+
+        long ledgerIdPrefix = 0;
+        char ch;
+        for (int i = ledgerRootPath.length() + 1; i < path.length(); i++) {
+            ch = path.charAt(i);
+            if (ch < '0' || ch > '9')
+                continue;
+            ledgerIdPrefix = ledgerIdPrefix * 10 + (ch - '0');
+        }
+
+        for (String ledgerNode : ledgerNodes) {
+            if (isSpecialZnode(ledgerNode)) {
+                continue;
+            }
+            long ledgerId = ledgerIdPrefix;
+            for (int i = 0; i < ledgerNode.length(); i++) {
+                ch = path.charAt(i);
+                if (ch < '0' || ch > '9')
+                    continue;
+                ledgerId = ledgerId * 10 + (ch - '0');
+            }
+            zkActiveLedgers.add(ledgerId);
+        }
+        return zkActiveLedgers;
     }
 }
