@@ -21,10 +21,10 @@
 
 package org.apache.bookkeeper.bookie;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -171,14 +171,12 @@ public class GarbageCollectorThread extends SafeRunnable {
                 }
 
                 @Override
-                public void process(final long ledgerId, long offset, ByteBuffer entry) throws IOException {
+                public void process(final long ledgerId, long offset, ByteBuf entry) throws IOException {
                     rateLimiter.acquire();
                     if (offsets.size() > maxOutstandingRequests) {
                         flush();
                     }
-                    entry.getLong(); // discard ledger id, we already have it
-                    long entryId = entry.getLong();
-                    entry.rewind();
+                    long entryId = entry.getLong(8);
 
                     long newoffset = entryLogger.addEntry(ledgerId, entry);
                     offsets.add(new EntryLocation(ledgerId, entryId, newoffset));

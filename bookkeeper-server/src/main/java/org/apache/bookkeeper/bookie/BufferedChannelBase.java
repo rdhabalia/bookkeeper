@@ -17,10 +17,11 @@
  */
 package org.apache.bookkeeper.bookie;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 
-public abstract class BufferedChannelBase {
+public abstract class BufferedChannelBase implements Closeable {
     protected final FileChannel fileChannel;
 
     protected BufferedChannelBase(FileChannel fc) {

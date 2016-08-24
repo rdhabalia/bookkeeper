@@ -154,7 +154,7 @@ public class SortedLedgerStorage extends InterleavedLedgerStorage
 
     @Override
     public void process(long ledgerId, long entryId,
-                        ByteBuffer buffer) throws IOException {
+                        ByteBuf buffer) throws IOException {
         processEntry(ledgerId, entryId, buffer, false);
     }
 

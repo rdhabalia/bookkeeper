@@ -3,14 +3,13 @@ package org.apache.bookkeeper.bookie.storage.ldb;
 import static com.google.common.base.Preconditions.checkArgument;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.SortedMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -24,6 +23,7 @@ import org.apache.bookkeeper.bookie.GarbageCollectorThread;
 import org.apache.bookkeeper.bookie.GarbageCollectorThread.CompactableLedgerStorage;
 import org.apache.bookkeeper.bookie.LedgerDirsManager;
 import org.apache.bookkeeper.bookie.storage.ldb.DbLedgerStorageDataFormats.LedgerData;
+import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorage.Batch;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.jmx.BKMBeanInfo;
 import org.apache.bookkeeper.proto.BookieProtocol;
@@ -34,7 +34,6 @@ import org.apache.bookkeeper.util.MathUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.carrotsearch.hppc.LongObjectHashMap;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.RateLimiter;
@@ -65,15 +64,15 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
     private final Condition flushWriteCacheCondition = writeCacheMutex.writeLock().newCondition();
 
     protected final AtomicBoolean hasFlushBeenTriggered = new AtomicBoolean(false);
+    private final AtomicBoolean isFlushOngoing = new AtomicBoolean(false);
 
-    private final ExecutorService executor = Executors.newCachedThreadPool(new DefaultThreadFactory("db-storage"));
+    private final ExecutorService executor = Executors.newSingleThreadExecutor(new DefaultThreadFactory("db-storage"));
 
     static final String WRITE_CACHE_MAX_SIZE_MB = "dbStorage_writeCacheMaxSizeMb";
     static final String WRITE_CACHE_CHUNK_SIZE_MB = "dbStorage_writeCacheChunkSizeMb";
     static final String READ_AHEAD_CACHE_BATCH_SIZE = "dbStorage_readAheadCacheBatchSize";
     static final String READ_AHEAD_CACHE_MAX_SIZE_MB = "dbStorage_readAheadCacheMaxSizeMb";
     static final String ENTRY_LOCATION_CACHE_MAX_SIZE_MB = "dbStorage_entryLocationCacheMaxSizeMb";
-    static final String ROCKSDB_ENABLED = "dbStorage_rocksDBEnabled";
 
     private static final long DEFAULT_WRITE_CACHE_MAX_SIZE_MB = 16;
     private static final long DEFAULT_READ_CACHE_MAX_SIZE_MB = 16;
@@ -131,20 +130,16 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         readCache = new ReadCache(readCacheMaxSize);
 
         this.stats = statsLogger;
-        boolean rocksDBEnabled = conf.getBoolean(ROCKSDB_ENABLED, false);
 
         log.info("Started Db Ledger Storage");
         log.info(" - Write cache size: {} MB", writeCacheMaxSize / MB);
         log.info(" - Read Cache: {} MB", readCacheMaxSize / MB);
         log.info(" - Read Cache threshold: {} MB", maxReadCacheSizeBelowThreshold / MB);
         log.info(" - Entry location cache max size: {} MB", entryLocationCacheMaxSize / MB);
-        log.info(" - RocksDB enabled: {}", rocksDBEnabled);
 
-        KeyValueStorageFactory storageFactory = rocksDBEnabled ? //
-                KeyValueStorageRocksDB.factory //
-                : KeyValueStorageLevelDB.factory;
-        ledgerIndex = new LedgerMetadataIndex(conf, storageFactory, baseDir, stats);
-        entryLocationIndex = new EntryLocationIndex(conf, storageFactory, baseDir, stats, entryLocationCacheMaxSize);
+        ledgerIndex = new LedgerMetadataIndex(conf, KeyValueStorageRocksDB.factory, baseDir, stats);
+        entryLocationIndex = new EntryLocationIndex(conf, KeyValueStorageRocksDB.factory, baseDir, stats,
+                entryLocationCacheMaxSize);
 
         entryLogger = new EntryLogger(conf, ledgerDirsManager);
         gcThread = new GarbageCollectorThread(conf, ledgerManagerProvider, this);
@@ -317,8 +312,9 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         try {
             // If the flush has already been triggered or flush has already switched the cache, we don't need to
             // trigger another flush
-            if (hasFlushBeenTriggered.compareAndSet(false, true)) {
+            if (!isFlushOngoing.get() && hasFlushBeenTriggered.compareAndSet(false, true)) {
                 // Trigger an early flush in background
+                log.info("Write cache is full, triggering flush");
                 executor.execute(() -> {
                     try {
                         flush();
@@ -326,11 +322,6 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
                         log.error("Error during flush", e);
                     }
                 });
-            }
-
-            if (!writeCacheBeingFlushed.isEmpty()) {
-                // If both caches are full, we have no more space to hold new entries and we must fail the request
-                throw new IOException("Write cache is full, cannot add entry " + ledgerId + "@" + entryId);
             }
 
             long timeoutNs = TimeUnit.MILLISECONDS.toNanos(100);
@@ -396,48 +387,48 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
 
         // Read from main storage
         try {
-            LedgerIndexPage ledgerIndexPage = entryLocationIndex.getLedgerIndexPage(ledgerId, entryId);
-            long entryLocation = ledgerIndexPage.getPosition(entryId);
-            if (entryLocation == 0L) {
+            long entryLocation = entryLocationIndex.getLocation(ledgerId, entryId);
+            if (entryLocation == 0) {
                 throw new NoEntryException(ledgerId, entryId);
             }
-            ByteBuf content = entryLogger.readEntry(ledgerId, entryId, entryLocation);
+            entry = entryLogger.readEntry(ledgerId, entryId, entryLocation);
+            readCache.put(ledgerId, entryId, entry);
 
             // Try to read more entries
-            fillReadAheadCache(ledgerIndexPage, ledgerId, entryId + 1);
+            fillReadAheadCache(ledgerId, entryId + 1, entryLocation);
 
             recordSuccessfulEvent(readCacheMissStats, startTime);
             recordSuccessfulEvent(readEntryStats, startTime);
-            return content;
+            return entry;
         } catch (NoEntryException e) {
             recordFailedEvent(readEntryStats, startTime);
             throw e;
         }
     }
 
-    private final RateLimiter readAheadCacheLimiter = RateLimiter.create(1000);
+    private final RateLimiter readAheadCacheLimiter = RateLimiter.create(50000);
 
-    private void fillReadAheadCache(LedgerIndexPage ledgerIndexPage, long ledgerId, long entryId) {
+    private void fillReadAheadCache(long ledgerId, long entryId, long firstEntryLocation) {
         try {
-            long lastEntryInPage = ledgerIndexPage.getLastEntry();
+            long entryLogId = firstEntryLocation >> 32;
             int count = 0;
             long size = 0;
 
-            while (count < readAheadCacheBatchSize && entryId <= lastEntryInPage) {
+            while (count < readAheadCacheBatchSize) {
                 if (!readAheadCacheLimiter.tryAcquire(0, TimeUnit.NANOSECONDS)) {
                     // Giving up
                     return;
                 }
 
-                long entryLocation = ledgerIndexPage.getPosition(entryId);
-                if (entryLocation == 0L) {
-                    // Skip entry since it's not stored on this bookie
-                    entryId++;
-                    continue;
+                long nextEntryLocation = entryLocationIndex.getLocation(ledgerId, entryId);
+                long nextEntryLogId = nextEntryLocation >> 32;
+                if (nextEntryLocation == 0 || nextEntryLogId != entryLogId) {
+                    // The entry is not in the bookie, or we have already moved to a different entry log file, stop read
+                    // ahead
+                    return;
                 }
 
-                ByteBuf content = entryLogger.readEntry(ledgerId, entryId, entryLocation);
-
+                ByteBuf content = entryLogger.readEntry(ledgerId, entryId, nextEntryLocation);
                 readCache.put(ledgerId, entryId, content);
                 entryId++;
                 count++;
@@ -543,51 +534,64 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
             hasFlushBeenTriggered.set(false);
             flushWriteCacheCondition.signalAll();
         } finally {
+            isFlushOngoing.set(true);
             writeCacheMutex.writeLock().unlock();
         }
 
         long sizeToFlush = writeCacheBeingFlushed.size();
         if (log.isDebugEnabled()) {
-            log.debug("Flushing entries. size {} Mb", sizeToFlush / 1024.0 / 1024);
+            log.debug("Flushing entries. count: {} -- size {} Mb", writeCacheBeingFlushed.count(),
+                    sizeToFlush / 1024.0 / 1024);
         }
 
         // Write all the pending entries into the entry logger and collect the offset position for each entry
-        LongObjectHashMap<List<LongPair>> locationsMap = new LongObjectHashMap<>();
-
-        writeCacheBeingFlushed.forEach((ledgerId, entryId, entry) -> {
-            try {
-                long location = entryLogger.addEntry(ledgerId, entry, true);
-                if (!locationsMap.containsKey(ledgerId)) {
-                    locationsMap.put(ledgerId, new ArrayList<LongPair>());
+        try {
+            Batch batch = entryLocationIndex.newBatch();
+            writeCacheBeingFlushed.forEach((ledgerId, entryId, entry) -> {
+                try {
+                    long location = entryLogger.addEntry(ledgerId, entry, true);
+                    entryLocationIndex.addLocation(batch, ledgerId, entryId, location);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
+            });
 
-                locationsMap.get(ledgerId).add(new LongPair(entryId, location));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
+            entryLogger.flush();
+
+            long batchFlushStarTime = System.nanoTime();
+            batch.flush();
+            batch.close();
+            if (log.isDebugEnabled()) {
+                log.debug("DB batch flushed time : {} s",
+                        MathUtils.elapsedNanos(batchFlushStarTime) / (double) TimeUnit.SECONDS.toNanos(1));
             }
-        });
 
-        entryLogger.flush();
+            ledgerIndex.flush();
+            entryLocationIndex.flush();
 
-        entryLocationIndex.addLocations(locationsMap);
+            lastCheckpoint = thisCheckpoint;
 
-        ledgerIndex.flush();
-        entryLocationIndex.flush();
+            // Discard all the entry from the write cache, since they're now persisted
+            writeCacheBeingFlushed.clear();
 
-        lastCheckpoint = thisCheckpoint;
+            double flushTimeSeconds = MathUtils.elapsedNanos(startTime) / (double) TimeUnit.SECONDS.toNanos(1);
+            double flushThroughput = sizeToFlush / 1024 / 1024 / flushTimeSeconds;
 
-        // Discard all the entry from the write cache, since they're now persisted
-        writeCacheBeingFlushed.clear();
+            if (log.isDebugEnabled()) {
+                log.debug("Flushing done time {} s -- Written {} MB/s", flushTimeSeconds, flushThroughput);
+            }
 
-        double flushTimeSeconds = MathUtils.elapsedNanos(startTime) / (double) TimeUnit.SECONDS.toNanos(1);
-        double flushThroughput = sizeToFlush / 1024 / 1024 / flushTimeSeconds;
-
-        if (log.isDebugEnabled()) {
-            log.debug("Flushing done time {} s -- Written {} MB/s", flushTimeSeconds, flushThroughput);
+            recordSuccessfulEvent(flushStats, startTime);
+            flushSizeStats.registerSuccessfulValue(sizeToFlush);
+        } catch (IOException e) {
+            // Leave IOExecption as it is
+            throw e;
+        } catch (RuntimeException e) {
+            // Wrap unchecked exceptions
+            throw new IOException(e);
+        } finally {
+            isFlushOngoing.set(false);
         }
-
-        recordSuccessfulEvent(flushStats, startTime);
-        flushSizeStats.registerSuccessfulValue(sizeToFlush);
         return lastCheckpoint;
     }
 
@@ -672,22 +676,26 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         LedgerData ledgerData = LedgerData.newBuilder().setExists(true).setFenced(isFenced)
                 .setMasterKey(ByteString.copyFrom(masterKey)).build();
         ledgerIndex.set(ledgerId, ledgerData);
-        long numberOfEntries = 0;
+        AtomicLong numberOfEntries = new AtomicLong();
 
         // Iterate over all the entries pages
-        for (SortedMap<Long, Long> page : entries) {
-            LongObjectHashMap<List<LongPair>> locationMap = new LongObjectHashMap<>();
-            List<LongPair> locations = Lists.newArrayListWithExpectedSize(page.size());
-            for (long entryId : page.keySet()) {
-                locations.add(new LongPair(entryId, page.get(entryId)));
-                ++numberOfEntries;
-            }
+        Batch batch = entryLocationIndex.newBatch();
+        entries.forEach(map -> {
+            map.forEach((entryId, location) -> {
+                try {
+                    entryLocationIndex.addLocation(batch, ledgerId, entryId, location);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
 
-            locationMap.put(ledgerId, locations);
-            entryLocationIndex.addLocations(locationMap);
-        }
+                numberOfEntries.incrementAndGet();
+            });
+        });
 
-        return numberOfEntries;
+        batch.flush();
+        batch.close();
+
+        return numberOfEntries.get();
     }
 
     @Override

@@ -5,36 +5,20 @@ import static junit.framework.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collection;
 
 import org.apache.bookkeeper.bookie.Bookie;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
-@RunWith(Parameterized.class)
 public class DbLedgerStorageWriteCacheTest {
 
     private DbLedgerStorage storage;
     private File tmpDir;
-    private final boolean rocksDBEnabled;
-
-    @Parameters
-    public static Collection<Object[]> configs() {
-        return Arrays.asList(new Object[][] { { false }, { true } });
-    }
-
-    public DbLedgerStorageWriteCacheTest(boolean rocksDBEnabled) {
-        this.rocksDBEnabled = rocksDBEnabled;
-    }
 
     private static class MockedDbLedgerStorage extends DbLedgerStorage {
 
@@ -73,7 +57,6 @@ public class DbLedgerStorageWriteCacheTest {
         conf.setGcWaitTime(gcWaitTime);
         conf.setAllowLoopback(true);
         conf.setLedgerStorageClass(MockedDbLedgerStorage.class.getName());
-        conf.setProperty(DbLedgerStorage.ROCKSDB_ENABLED, rocksDBEnabled);
         conf.setProperty(DbLedgerStorage.WRITE_CACHE_MAX_SIZE_MB, 1);
         conf.setLedgerDirNames(new String[] { tmpDir.toString() });
         Bookie bookie = new Bookie(conf);
@@ -110,7 +93,6 @@ public class DbLedgerStorageWriteCacheTest {
             entry.writeZero(100 * 1024);
             storage.addEntry(entry);
         }
-
 
         // Next add should fail for cache full
         ByteBuf entry = Unpooled.buffer(100 * 1024 + 2 * 8);

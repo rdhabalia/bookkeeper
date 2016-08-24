@@ -18,6 +18,21 @@ public interface KeyValueStorage extends Closeable {
     byte[] get(byte[] key) throws IOException;
 
     /**
+     * Get the value associated with the given key.
+     *
+     * This method will use the provided array store the value
+     *
+     * @param key
+     *            the key to lookup
+     * @param value
+     *            an array where to store the result
+     * @return -1 if the entry was not found or the length of the value
+     * @throws IOException
+     *             if the value array could not hold the result
+     */
+    int get(byte[] key, byte[] value) throws IOException;
+
+    /**
      * Get the entry whose key is the biggest and it's lesser than the supplied key.
      * <p>
      * For example if the db contains :
@@ -41,6 +56,15 @@ public interface KeyValueStorage extends Closeable {
      * @return the entry before or null if there's no entry before key
      */
     Entry<byte[], byte[]> getFloor(byte[] key) throws IOException;
+
+    /**
+     * Get the entry whose key is bigger or equal the supplied key
+     *
+     * @param key
+     * @return
+     * @throws IOException
+     */
+    Entry<byte[], byte[]> getCeil(byte[] key) throws IOException;
 
     /**
      *
@@ -73,6 +97,11 @@ public interface KeyValueStorage extends Closeable {
     CloseableIterator<Entry<byte[], byte[]>> iterator();
 
     /**
+     * Commit all pending write to durable storage
+     */
+    void sync() throws IOException;
+
+    /**
      * @return the number of keys
      */
     long count() throws IOException;
@@ -90,6 +119,10 @@ public interface KeyValueStorage extends Closeable {
 
         void remove(byte[] key);
 
+        void clear();
+
         void flush() throws IOException;
+
+        void close();
     }
 }

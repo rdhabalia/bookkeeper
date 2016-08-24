@@ -25,7 +25,6 @@ import io.netty.buffer.ByteBuf;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 import org.apache.bookkeeper.bookie.Bookie.NoLedgerException;
 import org.apache.bookkeeper.bookie.CheckpointSource.Checkpoint;
@@ -216,7 +215,7 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
         long entryId = entry.readLong();
         entry.resetReaderIndex();
 
-        processEntry(ledgerId, entryId, entry.nioBuffer());
+        processEntry(ledgerId, entryId, entry);
 
         return entryId;
     }
@@ -371,11 +370,11 @@ public class InterleavedLedgerStorage implements CompactableLedgerStorage, Entry
         ledgerDeletionListeners.add(listener);
     }
 
-    protected void processEntry(long ledgerId, long entryId, ByteBuffer entry) throws IOException {
+    protected void processEntry(long ledgerId, long entryId, ByteBuf entry) throws IOException {
         processEntry(ledgerId, entryId, entry, true);
     }
 
-    synchronized protected void processEntry(long ledgerId, long entryId, ByteBuffer entry, boolean rollLog)
+    synchronized protected void processEntry(long ledgerId, long entryId, ByteBuf entry, boolean rollLog)
             throws IOException {
         /*
          * Touch dirty flag
