@@ -273,12 +273,15 @@ public class EntryLocationIndex implements Closeable {
         String targetDbPath = path + ".updated";
         KeyValueStorage target = new KeyValueStorageRocksDB(targetDbPath, DbConfigType.Huge, conf);
 
-        long convertedRecords = 0;
+        double convertedRecords = 0;
         long targetDbRecords = 0;
 
         LongPairWrapper key = LongPairWrapper.get(0, 0);
         LongWrapper value = LongWrapper.get();
 
+        final int progressIntervalPercent = 10; // update progress at every 10% 
+        double nextUpdateAtPercent = progressIntervalPercent; // start updating at 10% completion
+        
         // Copy into new database. Write in batches to speed up the insertion
         CloseableIterator<Entry<byte[], byte[]>> iterator = source.iterator();
         try {
@@ -302,10 +305,11 @@ public class EntryLocationIndex implements Closeable {
                 }
 
                 ++convertedRecords;
-                if (recordsToConvert > 0 && convertedRecords % (recordsToConvert / 10) == 0) {
+                if (recordsToConvert > 0 && convertedRecords/recordsToConvert >= nextUpdateAtPercent/100) {
                     // Report progress at 10 percent intervals
                     log.info("Updated records {}/{}   {} %", new Object[] { convertedRecords, recordsToConvert,
                             100.0 * convertedRecords / recordsToConvert });
+                    nextUpdateAtPercent += progressIntervalPercent;
                 }
             }
 
