@@ -131,6 +131,7 @@ public class EntryLocationIndex implements Closeable {
         Batch batch = locationsDb.newBatch();
         addLocation(batch, ledgerId, entryId, location);
         batch.flush();
+        batch.close();
     }
 
     public Batch newBatch() {
@@ -279,9 +280,9 @@ public class EntryLocationIndex implements Closeable {
         LongPairWrapper key = LongPairWrapper.get(0, 0);
         LongWrapper value = LongWrapper.get();
 
-        final int progressIntervalPercent = 10; // update progress at every 10% 
+        final int progressIntervalPercent = 10; // update progress at every 10%
         double nextUpdateAtPercent = progressIntervalPercent; // start updating at 10% completion
-        
+
         // Copy into new database. Write in batches to speed up the insertion
         CloseableIterator<Entry<byte[], byte[]>> iterator = source.iterator();
         try {

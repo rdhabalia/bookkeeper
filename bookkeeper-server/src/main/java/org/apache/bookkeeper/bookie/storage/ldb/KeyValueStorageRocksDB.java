@@ -379,8 +379,6 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
                 db.write(Sync, this);
             } catch (RocksDBException e) {
                 throw new IOException("Failed to flush RocksDB batch", e);
-            } finally {
-                dispose();
             }
         }
 
