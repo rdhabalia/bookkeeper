@@ -516,7 +516,7 @@ class HierarchicalLedgerManager extends AbstractZkLedgerManager {
             }
             long ledgerId = ledgerIdPrefix;
             for (int i = 0; i < ledgerNode.length(); i++) {
-                ch = path.charAt(i);
+                ch = ledgerNode.charAt(i);
                 if (ch < '0' || ch > '9')
                     continue;
                 ledgerId = ledgerId * 10 + (ch - '0');
