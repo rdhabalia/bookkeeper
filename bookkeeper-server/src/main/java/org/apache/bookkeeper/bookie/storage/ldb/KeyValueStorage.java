@@ -114,7 +114,7 @@ public interface KeyValueStorage extends Closeable {
 
     Batch newBatch();
 
-    public static interface Batch {
+    public static interface Batch extends Closeable {
         void put(byte[] key, byte[] value);
 
         void remove(byte[] key);
@@ -122,7 +122,5 @@ public interface KeyValueStorage extends Closeable {
         void clear();
 
         void flush() throws IOException;
-
-        void close();
     }
 }

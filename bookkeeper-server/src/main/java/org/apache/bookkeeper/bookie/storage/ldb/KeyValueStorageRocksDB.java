@@ -372,19 +372,36 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
         return new RocksDBBatch();
     }
 
-    private class RocksDBBatch extends WriteBatch implements Batch {
-        @Override
-        public void flush() throws IOException {
-            try {
-                db.write(Sync, this);
-            } catch (RocksDBException e) {
-                throw new IOException("Failed to flush RocksDB batch", e);
-            }
-        }
+    private class RocksDBBatch implements Batch {
+        private final WriteBatch writeBatch = new WriteBatch();
 
         @Override
         public void close() {
-            dispose();
+            writeBatch.dispose();
+        }
+
+        @Override
+        public void put(byte[] key, byte[] value) {
+            writeBatch.put(key, value);
+        }
+
+        @Override
+        public void remove(byte[] key) {
+            writeBatch.remove(key);
+        }
+
+        @Override
+        public void clear() {
+            writeBatch.clear();
+        }
+
+        @Override
+        public void flush() throws IOException {
+            try {
+                db.write(Sync, writeBatch);
+            } catch (RocksDBException e) {
+                throw new IOException("Failed to flush RocksDB batch", e);
+            }
         }
     }
 
@@ -456,7 +473,6 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
         try {
             final int maxBatchSize = 10000;
             int currentBatchSize = 0;
-
 
             while (iterator.hasNext()) {
                 Entry<byte[], byte[]> entry = iterator.next();
