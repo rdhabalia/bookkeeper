@@ -158,6 +158,11 @@ class PendingAddOp extends SafeRunnable implements WriteCallback, IntProcedure {
      * Initiate the add operation
      */
     public void safeRun() {
+        if (callbackTriggered) {
+            // this should only be true if the request was failed due to another request ahead in the pending queue,
+            // so we can just ignore this request
+            return;
+        }
         this.requestTimeNanos = MathUtils.nowInNano();
         checkNotNull(lh);
         checkNotNull(lh.macManager);
@@ -182,7 +187,7 @@ class PendingAddOp extends SafeRunnable implements WriteCallback, IntProcedure {
         int bookieIndex = (Integer) ctx;
         --pendingWriteRequests;
 
-        if (completed) {
+        if (rc == BKException.Code.OK && completed) {
             // I am already finished, ignore incoming responses.
             // otherwise, we might hit the following error handling logic, which might cause bad things.
             if (callbackTriggered && pendingWriteRequests == 0) {
@@ -251,7 +256,7 @@ class PendingAddOp extends SafeRunnable implements WriteCallback, IntProcedure {
         cb.addComplete(rc, lh, entryId, ctx);
         callbackTriggered = true;
 
-        if (pendingWriteRequests == 0) {
+        if (rc == BKException.Code.OK && pendingWriteRequests == 0) {
             recycle();
         }
     }
