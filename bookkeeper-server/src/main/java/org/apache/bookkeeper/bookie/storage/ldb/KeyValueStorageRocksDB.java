@@ -90,7 +90,7 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
             int numFilesInLevel0 = conf.getInt(ROCKSDB_NUM_FILES_IN_LEVEL0, 4);
             long maxSizeInLevel1MB = conf.getLong(ROCKSDB_MAX_SIZE_IN_LEVEL1_MB, 256);
             int blockSize = conf.getInt(ROCKSDB_BLOCK_SIZE, 64 * 1024);
-            long blockCacheSize = conf.getInt(ROCKSDB_BLOCK_CACHE_SIZE, 256 * 1024 * 1024);
+            long blockCacheSize = conf.getLong(ROCKSDB_BLOCK_CACHE_SIZE, 256 * 1024 * 1024);
             int bloomFilterBitsPerKey = conf.getInt(ROCKSDB_BLOOM_FILTERS_BITS_PER_KEY, 10);
 
             options.setCompressionType(CompressionType.LZ4_COMPRESSION);
