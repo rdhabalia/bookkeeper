@@ -68,6 +68,10 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(new DefaultThreadFactory("db-storage"));
 
+    // Executor used to for db index cleanup
+    private final ExecutorService cleanupExecutor = Executors
+            .newSingleThreadExecutor(new DefaultThreadFactory("db-storage-cleanup"));
+
     static final String WRITE_CACHE_MAX_SIZE_MB = "dbStorage_writeCacheMaxSizeMb";
     static final String WRITE_CACHE_CHUNK_SIZE_MB = "dbStorage_writeCacheChunkSizeMb";
     static final String READ_AHEAD_CACHE_BATCH_SIZE = "dbStorage_readAheadCacheBatchSize";
@@ -216,13 +220,15 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
             gcThread.shutdown();
             entryLogger.shutdown();
 
+            cleanupExecutor.shutdown();
+            cleanupExecutor.awaitTermination(1, TimeUnit.SECONDS);
+
             ledgerIndex.close();
             entryLocationIndex.close();
 
             writeCache.close();
             writeCacheBeingFlushed.close();
             readCache.close();
-
             executor.shutdown();
 
         } catch (IOException e) {
@@ -567,7 +573,20 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
             }
 
             ledgerIndex.flush();
-            entryLocationIndex.flush();
+
+            cleanupExecutor.execute(() -> {
+                try {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Removing deleted ledgers from db indexes");
+                    }
+
+                    entryLocationIndex.removeOffsetFromDeletedLedgers();
+                    ledgerIndex.removeDeletedLedgers();
+                } catch (Throwable t) {
+                    log.warn("Failed to cleanup db indexes", t);
+                }
+            });
+
 
             lastCheckpoint = thisCheckpoint;
 

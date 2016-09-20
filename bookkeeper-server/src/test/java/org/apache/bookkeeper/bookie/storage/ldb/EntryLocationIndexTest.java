@@ -44,7 +44,7 @@ public class EntryLocationIndexTest {
         assertEquals(5, idx.getLocation(40313, 11));
         assertEquals(6, idx.getLocation(40313, 12));
 
-        idx.flush();
+        idx.removeOffsetFromDeletedLedgers();
 
         // After flush the keys will be removed
         assertEquals(0, idx.getLocation(40313, 10));
@@ -78,7 +78,7 @@ public class EntryLocationIndexTest {
         idx.addLocation(40320, 1, 7);
         idx.addLocation(40312, 3, 4);
 
-        idx.flush();
+        idx.removeOffsetFromDeletedLedgers();
 
         assertEquals(0, idx.getLocation(40313, 11));
         assertEquals(0, idx.getLocation(40313, 12));

@@ -216,6 +216,12 @@ public class LedgerMetadataIndex implements Closeable {
             log.debug("Persisting updates to {} ledgers", updatedLedgers);
         }
 
+        ledgersDb.sync();
+    }
+
+    public void removeDeletedLedgers() throws IOException {
+        LongWrapper key = LongWrapper.get();
+
         int deletedLedgers = 0;
         while (!pendingDeletedLedgers.isEmpty()) {
             long ledgerId = pendingDeletedLedgers.poll();

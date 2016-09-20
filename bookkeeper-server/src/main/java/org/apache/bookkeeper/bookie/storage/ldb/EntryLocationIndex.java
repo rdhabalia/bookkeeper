@@ -179,7 +179,7 @@ public class EntryLocationIndex implements Closeable {
         deletedLedgers.add(ledgerId);
     }
 
-    public void flush() throws IOException {
+    public void removeOffsetFromDeletedLedgers() throws IOException {
         LongPairWrapper firstKeyWrapper = LongPairWrapper.get(-1, -1);
         LongPairWrapper lastKeyWrapper = LongPairWrapper.get(-1, -1);
         LongPairWrapper keyToDelete = LongPairWrapper.get(-1, -1);
@@ -306,7 +306,7 @@ public class EntryLocationIndex implements Closeable {
                 }
 
                 ++convertedRecords;
-                if (recordsToConvert > 0 && convertedRecords/recordsToConvert >= nextUpdateAtPercent/100) {
+                if (recordsToConvert > 0 && convertedRecords / recordsToConvert >= nextUpdateAtPercent / 100) {
                     // Report progress at 10 percent intervals
                     log.info("Updated records {}/{}   {} %", new Object[] { convertedRecords, recordsToConvert,
                             100.0 * convertedRecords / recordsToConvert });
