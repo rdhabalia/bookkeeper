@@ -94,7 +94,10 @@ class BookieNettyServer {
         if (SystemUtils.IS_OS_LINUX) {
             try {
                 eventLoopGroup = new EpollEventLoopGroup(numThreads, threadFactory);
-            } catch (UnsatisfiedLinkError e) {
+            } catch (Throwable t) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Could not use Netty Epoll event loop for bookie server: {}", t.getMessage());
+                }
                 eventLoopGroup = new NioEventLoopGroup(numThreads, threadFactory);
             }
         } else {

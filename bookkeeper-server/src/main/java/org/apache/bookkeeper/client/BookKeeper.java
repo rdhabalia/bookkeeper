@@ -934,7 +934,10 @@ public class BookKeeper {
         if (SystemUtils.IS_OS_LINUX) {
             try {
                 return new EpollEventLoopGroup(numThreads, threadFactory);
-            } catch (UnsatisfiedLinkError e) {
+            } catch (Throwable t) {
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Could not use Netty Epoll event loop: {}", t.getMessage());
+                }
                 return new NioEventLoopGroup(numThreads, threadFactory);
             }
         } else {
