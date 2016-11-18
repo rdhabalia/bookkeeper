@@ -827,7 +827,7 @@ public class EntryLogger {
         return logChannel.position() + size > logSizeLimit;
     }
 
-    public ByteBuf readEntry(long ledgerId, long entryId, long location) throws IOException, Bookie.NoEntryException {
+    public ByteBuf internalReadEntry(long ledgerId, long entryId, long location) throws IOException, Bookie.NoEntryException {
         long entryLogId = logIdForOffset(location);
         long pos = location & 0xffffffffL;
         ByteBuf sizeBuff = sizeBuffer.get();
@@ -872,6 +872,15 @@ public class EntryLogger {
                                               + entryId + " in " + entryLogId + "@"
                                               + pos + "("+rc+"!="+entrySize+")", ledgerId, entryId);
         }
+
+        return data;
+    }
+
+    public ByteBuf readEntry(long ledgerId, long entryId, long location) throws IOException, Bookie.NoEntryException {
+        long entryLogId = logIdForOffset(location);
+        long pos = location & 0xffffffffL;
+
+        ByteBuf data = internalReadEntry(ledgerId, entryId, location);
         long thisLedgerId = data.getLong(0);
         if (thisLedgerId != ledgerId) {
             data.release();

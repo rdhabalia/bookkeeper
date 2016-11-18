@@ -36,7 +36,6 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
-import com.google.common.util.concurrent.RateLimiter;
 import com.google.protobuf.ByteString;
 
 import io.netty.buffer.ByteBuf;
@@ -401,7 +400,8 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
             readCache.put(ledgerId, entryId, entry);
 
             // Try to read more entries
-            fillReadAheadCache(ledgerId, entryId + 1, entryLocation);
+            long nextEntryLocation = entryLocation + 4 /* size header */ + entry.readableBytes();
+            fillReadAheadCache(ledgerId, entryId + 1, nextEntryLocation);
 
             recordSuccessfulEvent(readCacheMissStats, startTime);
             recordSuccessfulEvent(readEntryStats, startTime);
@@ -412,41 +412,43 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         }
     }
 
-    private final RateLimiter readAheadCacheLimiter = RateLimiter.create(50000);
-
-    private void fillReadAheadCache(long ledgerId, long entryId, long firstEntryLocation) {
+    private void fillReadAheadCache(long orginalLedgerId, long firstEntryId, long firstEntryLocation) {
         try {
-            long entryLogId = firstEntryLocation >> 32;
+            long firstEntryLogId = (firstEntryLocation >> 32);
+            long currentEntryLogId = firstEntryLogId;
+            long currentEntryLocation = firstEntryLocation;
             int count = 0;
             long size = 0;
 
-            while (count < readAheadCacheBatchSize) {
-                if (!readAheadCacheLimiter.tryAcquire(0, TimeUnit.NANOSECONDS)) {
-                    // Giving up
+            while (count < readAheadCacheBatchSize && currentEntryLogId == firstEntryLogId) {
+                ByteBuf entry = entryLogger.internalReadEntry(orginalLedgerId, -1, currentEntryLocation);
+
+                long currentEntryLedgerId = entry.getLong(0);
+                long currentEntryId = entry.getLong(8);
+
+                if (currentEntryLedgerId != orginalLedgerId) {
+                    // Found an entry belonging to a different ledger, stopping read-ahead
+                    entry.release();
                     return;
                 }
 
-                long nextEntryLocation = entryLocationIndex.getLocation(ledgerId, entryId);
-                long nextEntryLogId = nextEntryLocation >> 32;
-                if (nextEntryLocation == 0 || nextEntryLogId != entryLogId) {
-                    // The entry is not in the bookie, or we have already moved to a different entry log file, stop read
-                    // ahead
-                    return;
-                }
+                // Insert entry in read cache
+                readCache.put(orginalLedgerId, currentEntryId, entry);
 
-                ByteBuf content = entryLogger.readEntry(ledgerId, entryId, nextEntryLocation);
-                readCache.put(ledgerId, entryId, content);
-                entryId++;
                 count++;
-                size += content.readableBytes();
-                content.release();
+                size += entry.readableBytes();
+
+                currentEntryLocation += 4 + entry.readableBytes();
+                currentEntryLogId = currentEntryLocation >> 32;
+
+                entry.release();
             }
 
             readAheadBatchCountStats.registerSuccessfulValue(count);
             readAheadBatchSizeStats.registerSuccessfulValue(size);
         } catch (Exception e) {
             if (log.isDebugEnabled()) {
-                log.debug("Exception during read ahead: {}@{}: e", new Object[] { ledgerId, entryId, e });
+                log.debug("Exception during read ahead for ledger: {}: e", orginalLedgerId, e);
             }
         }
     }
