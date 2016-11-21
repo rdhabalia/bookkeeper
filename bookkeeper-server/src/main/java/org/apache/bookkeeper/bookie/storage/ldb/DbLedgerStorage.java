@@ -72,16 +72,12 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
             .newSingleThreadExecutor(new DefaultThreadFactory("db-storage-cleanup"));
 
     static final String WRITE_CACHE_MAX_SIZE_MB = "dbStorage_writeCacheMaxSizeMb";
-    static final String WRITE_CACHE_CHUNK_SIZE_MB = "dbStorage_writeCacheChunkSizeMb";
     static final String READ_AHEAD_CACHE_BATCH_SIZE = "dbStorage_readAheadCacheBatchSize";
     static final String READ_AHEAD_CACHE_MAX_SIZE_MB = "dbStorage_readAheadCacheMaxSizeMb";
-    static final String ENTRY_LOCATION_CACHE_MAX_SIZE_MB = "dbStorage_entryLocationCacheMaxSizeMb";
 
     private static final long DEFAULT_WRITE_CACHE_MAX_SIZE_MB = 16;
     private static final long DEFAULT_READ_CACHE_MAX_SIZE_MB = 16;
-    private static final float READ_CACHE_FULL_THRESHOLD = 0.80f;
     private static final int DEFAULT_READ_AHEAD_CACHE_BATCH_SIZE = 100;
-    private static final long DEFAULT_ENTRY_LOCATION_CACHE_MAX_SIZE_MB = 16;
 
     private static final int MB = 1024 * 1024;
 
@@ -94,7 +90,6 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
     private Checkpoint lastCheckpoint = Checkpoint.MIN;
 
     private long readCacheMaxSize;
-    private long maxReadCacheSizeBelowThreshold;
     private int readAheadCacheBatchSize;
 
     private StatsLogger stats;
@@ -125,10 +120,7 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         this.checkpointSource = checkpointSource;
 
         readCacheMaxSize = conf.getLong(READ_AHEAD_CACHE_MAX_SIZE_MB, DEFAULT_READ_CACHE_MAX_SIZE_MB) * MB;
-        maxReadCacheSizeBelowThreshold = (long) (readCacheMaxSize * READ_CACHE_FULL_THRESHOLD);
         readAheadCacheBatchSize = conf.getInt(READ_AHEAD_CACHE_BATCH_SIZE, DEFAULT_READ_AHEAD_CACHE_BATCH_SIZE);
-        long entryLocationCacheMaxSize = conf.getLong(ENTRY_LOCATION_CACHE_MAX_SIZE_MB,
-                DEFAULT_ENTRY_LOCATION_CACHE_MAX_SIZE_MB) * MB;
 
         readCache = new ReadCache(readCacheMaxSize);
 
@@ -137,12 +129,10 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         log.info("Started Db Ledger Storage");
         log.info(" - Write cache size: {} MB", writeCacheMaxSize / MB);
         log.info(" - Read Cache: {} MB", readCacheMaxSize / MB);
-        log.info(" - Read Cache threshold: {} MB", maxReadCacheSizeBelowThreshold / MB);
-        log.info(" - Entry location cache max size: {} MB", entryLocationCacheMaxSize / MB);
+        log.info(" - Read Ahead Batch size: : {}", readAheadCacheBatchSize);
 
         ledgerIndex = new LedgerMetadataIndex(conf, KeyValueStorageRocksDB.factory, baseDir, stats);
-        entryLocationIndex = new EntryLocationIndex(conf, KeyValueStorageRocksDB.factory, baseDir, stats,
-                entryLocationCacheMaxSize);
+        entryLocationIndex = new EntryLocationIndex(conf, KeyValueStorageRocksDB.factory, baseDir, stats);
 
         entryLogger = new EntryLogger(conf, ledgerDirsManager);
         gcThread = new GarbageCollectorThread(conf, ledgerManagerProvider, this);

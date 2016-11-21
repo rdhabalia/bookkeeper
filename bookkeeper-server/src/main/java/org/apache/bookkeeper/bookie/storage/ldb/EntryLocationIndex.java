@@ -41,7 +41,7 @@ public class EntryLocationIndex implements Closeable {
     private StatsLogger stats;
 
     public EntryLocationIndex(ServerConfiguration conf, KeyValueStorageFactory storageFactory, String basePath,
-            StatsLogger stats, long entryLocationCacheMaxSize) throws IOException {
+            StatsLogger stats) throws IOException {
         String locationsDbPath = FileSystems.getDefault().getPath(basePath, "locations").toFile().toString();
         convertIfNeeded(locationsDbPath, conf);
         locationsDb = storageFactory.newKeyValueStorage(locationsDbPath, DbConfigType.Huge, conf);
