@@ -21,11 +21,11 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.bookkeeper.client.BKException.BKNotEnoughBookiesException;
@@ -41,6 +41,8 @@ import org.apache.commons.configuration.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.carrotsearch.hppc.IntArrayList;
+import com.carrotsearch.hppc.procedures.IntProcedure;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 
@@ -300,10 +302,11 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
     private final Map<BookieSocketAddress, BookieNode> knownBookies;
     private BookieNode localNode;
     private final ReentrantReadWriteLock rwLock;
+    protected ImmutableSet<BookieSocketAddress> readOnlyBookies = null;
 
     public RackawareEnsemblePlacementPolicy() {
         topology = new NetworkTopology();
-        knownBookies = new HashMap<BookieSocketAddress, BookieNode>();
+        knownBookies = new ConcurrentHashMap<BookieSocketAddress, BookieNode>();
 
         rwLock = new ReentrantReadWriteLock();
     }
@@ -336,8 +339,9 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
             bn = null;
         }
         localNode = bn;
-        LOG.info("Initialize rackaware ensemble placement policy @ {} : {}.", localNode,
-                dnsResolver.getClass().getName());
+        LOG.info("Initialize rackaware ensemble placement policy @ {} @ {} : {}.",
+                 new Object[] { localNode, null == localNode ? "Unknown" : localNode.getNetworkLocation(),
+                         dnsResolver.getClass().getName() });
         return this;
     }
 
@@ -399,6 +403,10 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Cluster changed : bookie {} joined the cluster.", addr);
                 }
+            }
+
+            if (!readOnlyBookies.isEmpty()) {
+                this.readOnlyBookies = ImmutableSet.copyOf(readOnlyBookies);
             }
 
             return deadBookies;
@@ -634,5 +642,46 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
         } finally {
             rwLock.writeLock().unlock();
         }
+    }
+
+    @Override
+    public IntArrayList reorderReadSequence(ArrayList<BookieSocketAddress> ensemble, IntArrayList writeSet) {
+        // If all the bookies in the write set are available, simply return the original write set,
+        // to avoid creating more lists
+        boolean isAnyBookieUnavailable = false;
+        for (int i = 0; i < ensemble.size(); i++) {
+            BookieSocketAddress bookieAddr = ensemble.get(i);
+            if (!knownBookies.containsKey(bookieAddr) && !readOnlyBookies.contains(bookieAddr)) {
+                // Found at least one bookie not available in the ensemble
+                isAnyBookieUnavailable = true;
+                break;
+            }
+        }
+
+        if (!isAnyBookieUnavailable) {
+            return writeSet;
+        }
+
+        IntArrayList finalList = new IntArrayList(writeSet.size());
+        IntArrayList readOnlyList = new IntArrayList(writeSet.size());
+        IntArrayList unAvailableList = new IntArrayList(writeSet.size());
+        writeSet.forEach((IntProcedure) idx -> {
+            BookieSocketAddress address = ensemble.get(idx);
+            if (null == knownBookies.get(address)) {
+                // there isn't too much differences between readonly bookies from unavailable bookies. since there
+                // is no write requests to them, so we shouldn't try reading from readonly bookie in prior to
+                // writable bookies.
+                if ((null == readOnlyBookies) || !readOnlyBookies.contains(address)) {
+                    unAvailableList.add(idx);
+                } else {
+                    readOnlyList.add(idx);
+                }
+            } else {
+                finalList.add(idx);
+            }
+        });
+        finalList.addAll(readOnlyList);
+        finalList.addAll(unAvailableList);
+        return finalList;
     }
 }

@@ -24,6 +24,8 @@ import org.apache.bookkeeper.client.BKException.BKNotEnoughBookiesException;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.commons.configuration.Configuration;
 
+import com.carrotsearch.hppc.IntArrayList;
+
 /**
  * Encapsulation of the algorithm that selects a number of bookies from the cluster as an ensemble for storing
  * data, based on the data input as well as the node properties.
@@ -89,4 +91,15 @@ public interface EnsemblePlacementPolicy {
     public BookieSocketAddress replaceBookie(BookieSocketAddress bookieToReplace,
             Set<BookieSocketAddress> currentEnsemble, Set<BookieSocketAddress> excludeBookies)
             throws BKNotEnoughBookiesException;
+
+    /**
+     * Reorder the read sequence of a given write quorum <i>writeSet</i>.
+     *
+     * @param ensemble
+     *          Ensemble to read entries.
+     * @param writeSet
+     *          Write quorum to read entries.
+     * @return read sequence of bookies
+     */
+    public IntArrayList reorderReadSequence(ArrayList<BookieSocketAddress> ensemble, IntArrayList writeSet);
 }

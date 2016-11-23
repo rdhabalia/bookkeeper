@@ -41,6 +41,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.carrotsearch.hppc.IntArrayList;
+
 public class TestRackawareEnsemblePlacementPolicy {
 
     static final Logger LOG = LoggerFactory.getLogger(TestRackawareEnsemblePlacementPolicy.class);
@@ -64,6 +66,167 @@ public class TestRackawareEnsemblePlacementPolicy {
     @After
     public void tearDown() throws Exception {
         repp.uninitalize();
+    }
+
+    @Test(timeout = 60000)
+    public void testNodeDown() throws Exception {
+        BookieSocketAddress addr1 = new BookieSocketAddress("127.0.0.1", 3181);
+        BookieSocketAddress addr2 = new BookieSocketAddress("127.0.0.2", 3181);
+        BookieSocketAddress addr3 = new BookieSocketAddress("127.0.0.3", 3181);
+        BookieSocketAddress addr4 = new BookieSocketAddress("127.0.0.4", 3181);
+        // update dns mapping
+        StaticDNSResolver.addNodeToRack(addr1, NetworkTopology.DEFAULT_RACK);
+        StaticDNSResolver.addNodeToRack(addr2, "/r2");
+        StaticDNSResolver.addNodeToRack(addr3, "/r2");
+        StaticDNSResolver.addNodeToRack(addr4, "/r3");
+        // Update cluster
+        Set<BookieSocketAddress> addrs = new HashSet<BookieSocketAddress>();
+        addrs.add(addr1);
+        addrs.add(addr2);
+        addrs.add(addr3);
+        addrs.add(addr4);
+        repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
+
+        ArrayList<BookieSocketAddress> ensemble = new ArrayList<>(addrs);
+        IntArrayList writeSet = new IntArrayList(ensemble.size());
+        for (int i = 0; i < ensemble.size(); i++) {
+            writeSet.add(i);
+        }
+
+        addrs.remove(addr1);
+        repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
+
+        IntArrayList reoderSet = repp.reorderReadSequence(ensemble, writeSet);
+        IntArrayList expectedSet = new IntArrayList(writeSet.size());
+        expectedSet.add(1);
+        expectedSet.add(2);
+        expectedSet.add(3);
+        expectedSet.add(0);
+        LOG.info("reorder set : {}", reoderSet);
+        assertFalse(reoderSet == writeSet);
+        assertEquals(expectedSet, reoderSet);
+    }
+
+    @Test(timeout = 60000)
+    public void testNodeReadOnly() throws Exception {
+        BookieSocketAddress addr1 = new BookieSocketAddress("127.0.0.1", 3181);
+        BookieSocketAddress addr2 = new BookieSocketAddress("127.0.0.2", 3181);
+        BookieSocketAddress addr3 = new BookieSocketAddress("127.0.0.3", 3181);
+        BookieSocketAddress addr4 = new BookieSocketAddress("127.0.0.4", 3181);
+        // update dns mapping
+        StaticDNSResolver.addNodeToRack(addr1, NetworkTopology.DEFAULT_RACK);
+        StaticDNSResolver.addNodeToRack(addr2, "/r2");
+        StaticDNSResolver.addNodeToRack(addr3, "/r2");
+        StaticDNSResolver.addNodeToRack(addr4, "/r3");
+        // Update cluster
+        Set<BookieSocketAddress> addrs = new HashSet<BookieSocketAddress>();
+        addrs.add(addr1);
+        addrs.add(addr2);
+        addrs.add(addr3);
+        addrs.add(addr4);
+        repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
+
+        ArrayList<BookieSocketAddress> ensemble = new ArrayList<>(addrs);
+        IntArrayList writeSet = new IntArrayList(ensemble.size());
+        for (int i = 0; i < ensemble.size(); i++) {
+            writeSet.add(i);
+        }
+
+        Set<BookieSocketAddress> readonly = new HashSet<BookieSocketAddress>();
+        readonly.add(addr1);
+        addrs.remove(addr1);
+        repp.onClusterChanged(addrs, readonly);
+
+        IntArrayList reoderSet = repp.reorderReadSequence(ensemble, writeSet);
+        IntArrayList expectedSet = new IntArrayList(writeSet.size());
+        expectedSet.add(1);
+        expectedSet.add(2);
+        expectedSet.add(3);
+        expectedSet.add(0);
+        LOG.info("reorder set : {}", reoderSet);
+        assertFalse(reoderSet == writeSet);
+        assertEquals(expectedSet, reoderSet);
+    }
+
+    @Test(timeout = 60000)
+    public void testTwoNodesDown() throws Exception {
+        BookieSocketAddress addr1 = new BookieSocketAddress("127.0.0.1", 3181);
+        BookieSocketAddress addr2 = new BookieSocketAddress("127.0.0.2", 3181);
+        BookieSocketAddress addr3 = new BookieSocketAddress("127.0.0.3", 3181);
+        BookieSocketAddress addr4 = new BookieSocketAddress("127.0.0.4", 3181);
+        // update dns mapping
+        StaticDNSResolver.addNodeToRack(addr1, NetworkTopology.DEFAULT_RACK);
+        StaticDNSResolver.addNodeToRack(addr2, "/r2");
+        StaticDNSResolver.addNodeToRack(addr3, "/r2");
+        StaticDNSResolver.addNodeToRack(addr4, "/r3");
+        // Update cluster
+        Set<BookieSocketAddress> addrs = new HashSet<BookieSocketAddress>();
+        addrs.add(addr1);
+        addrs.add(addr2);
+        addrs.add(addr3);
+        addrs.add(addr4);
+        repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
+
+        ArrayList<BookieSocketAddress> ensemble = new ArrayList<>(addrs);
+        IntArrayList writeSet = new IntArrayList(ensemble.size());
+        for (int i = 0; i < ensemble.size(); i++) {
+            writeSet.add(i);
+        }
+
+        addrs.remove(addr1);
+        addrs.remove(addr2);
+        repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
+
+        IntArrayList reoderSet = repp.reorderReadSequence(ensemble, writeSet);
+        IntArrayList expectedSet = new IntArrayList(writeSet.size());
+        expectedSet.add(2);
+        expectedSet.add(3);
+        expectedSet.add(0);
+        expectedSet.add(1);
+        LOG.info("reorder set : {}", reoderSet);
+        assertFalse(reoderSet == writeSet);
+        assertEquals(expectedSet, reoderSet);
+    }
+
+    @Test(timeout = 60000)
+    public void testNodeDownAndReadOnly() throws Exception {
+        BookieSocketAddress addr1 = new BookieSocketAddress("127.0.0.1", 3181);
+        BookieSocketAddress addr2 = new BookieSocketAddress("127.0.0.2", 3181);
+        BookieSocketAddress addr3 = new BookieSocketAddress("127.0.0.3", 3181);
+        BookieSocketAddress addr4 = new BookieSocketAddress("127.0.0.4", 3181);
+        // update dns mapping
+        StaticDNSResolver.addNodeToRack(addr1, NetworkTopology.DEFAULT_RACK);
+        StaticDNSResolver.addNodeToRack(addr2, "/r2");
+        StaticDNSResolver.addNodeToRack(addr3, "/r2");
+        StaticDNSResolver.addNodeToRack(addr4, "/r3");
+        // Update cluster
+        Set<BookieSocketAddress> addrs = new HashSet<BookieSocketAddress>();
+        addrs.add(addr1);
+        addrs.add(addr2);
+        addrs.add(addr3);
+        addrs.add(addr4);
+        repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
+
+        ArrayList<BookieSocketAddress> ensemble = new ArrayList<>(addrs);
+        IntArrayList writeSet = new IntArrayList(ensemble.size());
+        for (int i = 0; i < ensemble.size(); i++) {
+            writeSet.add(i);
+        }
+
+        Set<BookieSocketAddress> readonly = new HashSet<BookieSocketAddress>();
+        readonly.add(addr2);
+        addrs.remove(addr1);
+        addrs.remove(addr2);
+        repp.onClusterChanged(addrs, readonly);
+
+        IntArrayList reoderSet = repp.reorderReadSequence(ensemble, writeSet);
+        IntArrayList expectedSet = new IntArrayList(writeSet.size());
+        expectedSet.add(2);
+        expectedSet.add(3);
+        expectedSet.add(1);
+        expectedSet.add(0);
+        assertFalse(reoderSet == writeSet);
+        assertEquals(expectedSet, reoderSet);
     }
 
     @Test(timeout = 60000)
