@@ -21,11 +21,11 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.bookkeeper.client.BKException.BKNotEnoughBookiesException;
@@ -306,7 +306,7 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
 
     public RackawareEnsemblePlacementPolicy() {
         topology = new NetworkTopology();
-        knownBookies = new HashMap<BookieSocketAddress, BookieNode>();
+        knownBookies = new ConcurrentHashMap<BookieSocketAddress, BookieNode>();
 
         rwLock = new ReentrantReadWriteLock();
     }
@@ -646,27 +646,38 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
 
     @Override
     public IntArrayList reorderReadSequence(ArrayList<BookieSocketAddress> ensemble, IntArrayList writeSet) {
+        // If all the bookies in the write set are available, simply return the original write set,
+        // to avoid creating more lists
+        boolean isAnyBookieUnavailable = false;
+        for (int i = 0; i < ensemble.size(); i++) {
+            BookieSocketAddress bookieAddr = ensemble.get(i);
+            if (!knownBookies.containsKey(bookieAddr) && !readOnlyBookies.contains(bookieAddr)) {
+                // Found at least one bookie not available in the ensemble
+                isAnyBookieUnavailable = true;
+                break;
+            }
+        }
+
+        if (!isAnyBookieUnavailable) {
+            return writeSet;
+        }
+
         IntArrayList finalList = new IntArrayList(writeSet.size());
         IntArrayList readOnlyList = new IntArrayList(writeSet.size());
         IntArrayList unAvailableList = new IntArrayList(writeSet.size());
-        writeSet.forEach(new IntProcedure() {
-
-            @Override
-            public void apply(int idx) {
-                BookieSocketAddress address = ensemble.get(idx);
-                if (null == knownBookies.get(address)) {
-                    // there isn't too much differences between readonly bookies from unavailable bookies. since there
-                    // is no write requests to them, so we shouldn't try reading from readonly bookie in prior to
-                    // writable
-                    // bookies.
-                    if ((null == readOnlyBookies) || !readOnlyBookies.contains(address)) {
-                        unAvailableList.add(idx);
-                    } else {
-                        readOnlyList.add(idx);
-                    }
+        writeSet.forEach((IntProcedure) idx -> {
+            BookieSocketAddress address = ensemble.get(idx);
+            if (null == knownBookies.get(address)) {
+                // there isn't too much differences between readonly bookies from unavailable bookies. since there
+                // is no write requests to them, so we shouldn't try reading from readonly bookie in prior to
+                // writable bookies.
+                if ((null == readOnlyBookies) || !readOnlyBookies.contains(address)) {
+                    unAvailableList.add(idx);
                 } else {
-                    finalList.add(idx);
+                    readOnlyList.add(idx);
                 }
+            } else {
+                finalList.add(idx);
             }
         });
         finalList.addAll(readOnlyList);
