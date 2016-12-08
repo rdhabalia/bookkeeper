@@ -302,7 +302,9 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
     private final Map<BookieSocketAddress, BookieNode> knownBookies;
     private BookieNode localNode;
     private final ReentrantReadWriteLock rwLock;
-    protected ImmutableSet<BookieSocketAddress> readOnlyBookies = null;
+
+    // Initialize to empty set
+    protected ImmutableSet<BookieSocketAddress> readOnlyBookies = ImmutableSet.of();
 
     public RackawareEnsemblePlacementPolicy() {
         topology = new NetworkTopology();
