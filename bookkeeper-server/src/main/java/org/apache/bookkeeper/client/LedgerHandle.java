@@ -473,7 +473,12 @@ public class LedgerHandle {
      */
     public void asyncReadLastEntry(ReadCallback cb, Object ctx) {
         long lastEntryId = getLastAddConfirmed();
-        asyncReadEntriesInternal(lastEntryId, lastEntryId, cb, ctx, true);
+        if (lastEntryId < 0) {
+            // Ledger was empty, so there is no last entry to read
+            cb.readComplete(BKException.Code.NoSuchEntryException, this, null, ctx);
+        } else {
+            asyncReadEntriesInternal(lastEntryId, lastEntryId, cb, ctx, true);
+        }
     }
 
     void asyncReadEntriesInternal(long firstEntry, long lastEntry, ReadCallback cb, Object ctx,
