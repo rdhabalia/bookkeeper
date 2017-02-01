@@ -51,6 +51,7 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.Ignore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -260,6 +261,7 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
      * Test Auditor should consider Readonly bookie as available bookie. Should not publish ur ledgers for
      * readonly bookies.
      */
+    @Ignore
     @Test(timeout = 20000)
     public void testReadOnlyBookieExclusionFromURLedgersCheck() throws Exception {
         LedgerHandle lh = createAndAddEntriesToLedger();

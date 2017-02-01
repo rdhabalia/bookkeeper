@@ -7,6 +7,7 @@ import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.junit.Assert;
 import org.junit.Test;
+import org.junit.Ignore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -22,6 +23,7 @@ public class TestBookieHealthCheck extends BookKeeperClusterTestCase {
         baseClientConf.setBookieQuarantineTime(5, TimeUnit.SECONDS);
     }
 
+    @Ignore
     @Test
     public void testBkQuarantine() throws Exception {
         LedgerHandle lh = bkc.createLedger(2, 2, 2, BookKeeper.DigestType.CRC32, new byte[] {});
