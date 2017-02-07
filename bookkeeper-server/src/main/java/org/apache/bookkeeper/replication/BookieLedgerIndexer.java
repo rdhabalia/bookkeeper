@@ -71,7 +71,7 @@ public class BookieLedgerIndexer {
                     final AsyncCallback.VoidCallback iterCallback) {
                 GenericCallback<LedgerMetadata> genericCallback = new GenericCallback<LedgerMetadata>() {
                     @Override
-                    public void operationComplete(final int rc,
+                    public void operationComplete(int rc,
                             LedgerMetadata ledgerMetadata) {
                         if (rc == BKException.Code.OK) {
                             for (Map.Entry<Long, ArrayList<BookieSocketAddress>> ensemble : ledgerMetadata
@@ -83,6 +83,10 @@ public class BookieLedgerIndexer {
                                               ledgerId);
                                 }
                             }
+                        } else if (rc == BKException.Code.NoSuchLedgerExistsException) {
+                            LOG.warn("Ledger:" + ledgerId
+                                    + " is already deleted");
+                            rc = BKException.Code.OK;
                         } else {
                             LOG.warn("Unable to read the ledger:" + ledgerId
                                     + " information");
