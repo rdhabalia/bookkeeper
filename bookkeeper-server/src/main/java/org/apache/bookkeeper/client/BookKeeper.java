@@ -216,8 +216,10 @@ public class BookKeeper {
         bookieWatcher = new BookieWatcher(conf, scheduler, placementPolicy, this);
         bookieWatcher.readBookiesBlocking();
 
-        ledgerManagerFactory = LedgerManagerFactory.newLedgerManagerFactory(conf, zk);
-        ledgerManager = new CleanupLedgerManager(ledgerManagerFactory.newLedgerManager());
+        // initialize ledger manager
+        this.ledgerManagerFactory = LedgerManagerFactory.newLedgerManagerFactory(conf, this.zk);
+        this.ledgerManager = new CleanupLedgerManager(ledgerManagerFactory.newLedgerManager());
+        this.ledgerIdGenerator = ledgerManagerFactory.newLedgerIdGenerator();
 
         ownChannelFactory = true;
         ownZKHandle = true;
@@ -298,17 +300,12 @@ public class BookKeeper {
         bookieWatcher = new BookieWatcher(conf, scheduler, placementPolicy, this);
         bookieWatcher.readBookiesBlocking();
 
-        ledgerManagerFactory = LedgerManagerFactory.newLedgerManagerFactory(conf, zk);
-        ledgerManager = new CleanupLedgerManager(ledgerManagerFactory.newLedgerManager());
-
-<<<<<<< HEAD
-        scheduleBookieHealthCheckIfEnabled();
-=======
         // initialize ledger manager
         this.ledgerManagerFactory = LedgerManagerFactory.newLedgerManagerFactory(conf, this.zk);
         this.ledgerManager = new CleanupLedgerManager(ledgerManagerFactory.newLedgerManager());
         this.ledgerIdGenerator = ledgerManagerFactory.newLedgerIdGenerator();
->>>>>>> 5662416d... BOOKKEEPER-438: Move ledger id generation out of LedgerManager (Tong Yu via sijie)
+
+        scheduleBookieHealthCheckIfEnabled();
     }
 
     private EnsemblePlacementPolicy initializeEnsemblePlacementPolicy(ClientConfiguration conf)
