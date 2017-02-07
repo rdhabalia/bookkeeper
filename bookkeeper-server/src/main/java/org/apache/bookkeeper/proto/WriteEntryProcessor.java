@@ -60,6 +60,8 @@ class WriteEntryProcessor extends PacketProcessorBase implements WriteCallback {
             sendResponse(BookieProtocol.EREADONLY,
                          ResponseBuilder.buildErrorResponse(BookieProtocol.EREADONLY, add),
                          requestProcessor.addRequestStats);
+            add.getData().release();
+            add.recycle();
             return;
         }
 
