@@ -33,6 +33,7 @@ import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.junit.Test;
+import org.junit.Ignore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +49,7 @@ public class SlowBookieTest extends BookKeeperClusterTestCase {
         baseConf.setNumReadWorkerThreads(0);
     }
 
+    @Ignore
     @Test(timeout=60000)
     public void testSlowBookie() throws Exception {
         ClientConfiguration conf = new ClientConfiguration();

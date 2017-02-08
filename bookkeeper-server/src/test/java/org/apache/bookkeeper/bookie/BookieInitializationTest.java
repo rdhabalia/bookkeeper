@@ -41,6 +41,7 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 import org.junit.Test;
+import org.junit.Ignore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -166,6 +167,7 @@ public class BookieInitializationTest extends BookKeeperClusterTestCase {
      * Verify duplicate bookie server startup. Should throw
      * java.net.BindException if already BK server is running
      */
+    @Ignore
     @Test(timeout = 20000)
     public void testDuplicateBookieServerStartup() throws Exception {
         File tmpDir = createTempDir("bookie", "test");

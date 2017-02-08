@@ -38,6 +38,7 @@ import org.apache.commons.configuration.Configuration;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.Ignore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,6 +108,7 @@ public class TestRackawareEnsemblePlacementPolicy {
         assertEquals(expectedSet, reoderSet);
     }
 
+    @Ignore
     @Test(timeout = 60000)
     public void testNodeReadOnly() throws Exception {
         BookieSocketAddress addr1 = new BookieSocketAddress("127.0.0.1", 3181);

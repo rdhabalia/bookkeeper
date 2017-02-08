@@ -32,6 +32,7 @@ import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.junit.Assert;
 import org.junit.Test;
+import org.junit.Ignore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,6 +50,7 @@ public class TestReadTimeout extends BookKeeperClusterTestCase {
         this.digestType = DigestType.CRC32;
     }
 
+    @Ignore
     @SuppressWarnings("deprecation")
     @Test(timeout=60000)
     public void testReadTimeout() throws Exception {
