@@ -78,7 +78,12 @@ public class ZkLedgerIdGenerator implements LedgerIdGenerator {
                         long ledgerId;
                         try {
                             ledgerId = getLedgerIdFromGenPath(idPathName);
-                            cb.operationComplete(BKException.Code.OK, ledgerId);
+                            if(ledgerId < 0 || ledgerId >= Integer.MAX_VALUE) {
+                                cb.operationComplete(BKException.Code.LedgerIdOverflowException, null);
+                            }
+                            else {
+                                cb.operationComplete(BKException.Code.OK, ledgerId);
+                            }
                         } catch (IOException e) {
                             LOG.error("Could not extract ledger-id from id gen path:" + path, e);
                             cb.operationComplete(BKException.Code.ZKException, null);

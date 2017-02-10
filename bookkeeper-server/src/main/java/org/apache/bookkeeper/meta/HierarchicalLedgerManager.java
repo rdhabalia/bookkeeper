@@ -268,7 +268,7 @@ class HierarchicalLedgerManager extends AbstractZkLedgerManager {
 
     @Override
     protected boolean isSpecialZnode(String znode) {
-        return IDGEN_ZNODE.equals(znode) || super.isSpecialZnode(znode);
+        return IDGEN_ZNODE.equals(znode) || LongHierarchicalLedgerManager.IDGEN_ZNODE.equals(znode) || super.isSpecialZnode(znode);
     }
 
     @Override
@@ -300,7 +300,8 @@ class HierarchicalLedgerManager extends AbstractZkLedgerManager {
                 } else {
                     return false;
                 }
-                if (isSpecialZnode(curL1Nodes)) {
+                // Top level nodes are always exactly 2 digits long. (Don't pick up long hierarchical top level nodes)
+                if (isSpecialZnode(curL1Nodes) || curL1Nodes.length() > 2) {
                     continue;
                 }
                 List<String> l2Nodes = zk.getChildren(ledgerRootPath + "/" + curL1Nodes, null);

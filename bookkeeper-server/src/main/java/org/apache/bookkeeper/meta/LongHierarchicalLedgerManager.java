@@ -61,8 +61,10 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
     static final Logger LOG = LoggerFactory.getLogger(LongHierarchicalLedgerManager.class);
 
+    static final String IDGEN_ZNODE = "idgen-long";
     private static final String MAX_ID_SUFFIX = "9999";
     private static final String MIN_ID_SUFFIX = "0000";
+
 
     /**
      * Constructor
@@ -78,6 +80,10 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
     @Override
     public String getLedgerPath(long ledgerId) {
+        if(ledgerId >= 0 && ledgerId < Integer.MAX_VALUE) {
+            // All ids < Integer.MAX_VALUE should still be handled by the old HierarchicalLedgerManager.
+            return ledgerRootPath + StringUtils.getHierarchicalLedgerPath(ledgerId);
+        }
         return ledgerRootPath + StringUtils.getLongHierarchicalLedgerPath(ledgerId);
     }
 
@@ -132,9 +138,26 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
     @Override
     public void asyncProcessLedgers(final Processor<Long> processor, final AsyncCallback.VoidCallback finalCb,
             final Object context, final int successRc, final int failureRc) {
-        asyncProcessLevelNodes(ledgerRootPath,
-                new RecursiveProcessor(0, ledgerRootPath, processor, context, successRc, failureRc), finalCb, context,
-                successRc, failureRc);
+
+        // Process the old 31-bit id ledgers first.
+        super.asyncProcessLedgers(processor, new VoidCallback(){
+
+            @Override
+            public void processResult(int rc, String path, Object ctx) {
+                if(rc == failureRc) {
+                    // If it fails, return the failure code to the callback
+                    finalCb.processResult(rc, path, ctx);
+                }
+                else {
+                    // If it succeeds, proceed with our own recursive ledger processing for the 63-bit id ledgers
+                    asyncProcessLevelNodes(ledgerRootPath,
+                            new RecursiveProcessor(0, ledgerRootPath, processor, context, successRc, failureRc), finalCb, context,
+                            successRc, failureRc);
+                }
+            }
+
+        }, context, successRc, failureRc);
+
     }
 
     private class RecursiveProcessor implements Processor<String> {
@@ -153,6 +176,14 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
             this.context = context;
             this.successRc = successRc;
             this.failureRc = failureRc;
+        }
+
+        @Override
+        protected boolean isSpecialZnode(String znode) {
+            // Check nextnode length. All paths in long hierarchical format (3-4-4-4-4)
+            // are at least 3 characters long. This prevents picking up any old-style
+            // hierarchical paths (2-4-4)
+            super.isSpecialZnode(znode) || znode.length() < 3;
         }
 
         @Override
@@ -175,7 +206,8 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
     @Override
     public LedgerRangeIterator getLedgerRanges() {
-        return new LongHierarchicalLedgerRangeIterator();
+        LedgerRangeIterator intLedgerRangeIterator = super.getLedgerRanges();
+        return new LongHierarchicalLedgerRangeIterator(intLedgerRangeIterator);
     }
 
     /**
@@ -189,9 +221,12 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
         private boolean iteratorDone = false;
         private LedgerRange nextRange = null;
 
-        private LongHierarchicalLedgerRangeIterator() {
+        private LedgerRangeIterator intLedgerRangeIterator;
+
+        private LongHierarchicalLedgerRangeIterator(LedgerRangeIterator intLedgerRangeIterator) {
             levelNodesIter = new ArrayList<Iterator<String>>(Collections.nCopies(4, (Iterator<String>) null));
             curLevelNodes = new ArrayList<String>(Collections.nCopies(4, (String) null));
+            this.intLedgerRangeIterator = intLedgerRangeIterator;
         }
 
         private void initialize(String path, int level) throws KeeperException, InterruptedException, IOException {
@@ -285,6 +320,11 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
         @Override
         synchronized public boolean hasNext() throws IOException {
+            // Try old behavior first.
+            if(intLedgerRangeIterator != null && intLedgerRangeIterator.hasNext()) {
+                return true;
+            }
+
             try {
                 preload();
             } catch (KeeperException ke) {
@@ -298,6 +338,11 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
         @Override
         synchronized public LedgerRange next() throws IOException {
+            if(intLedgerRangeIterator != null && intLedgerRangeIterator.hasNext()) {
+                // Return the old 31-bit ledger ID ranges until there are no more.
+                return intLedgerRangeIterator.next();
+            }
+
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
@@ -306,7 +351,7 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
             return r;
         }
 
-        LedgerRange getLedgerRangeByLevel(List<String> curLevelNodes) throws IOException {
+        private LedgerRange getLedgerRangeByLevel(List<String> curLevelNodes) throws IOException {
             String level1 = curLevelNodes.get(0);
             String level2 = curLevelNodes.get(1);
             String level3 = curLevelNodes.get(2);

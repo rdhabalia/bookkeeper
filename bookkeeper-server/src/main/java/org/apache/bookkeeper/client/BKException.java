@@ -98,6 +98,8 @@ public abstract class BKException extends Exception {
             return new BKIllegalOpException();
         case Code.TimeoutException:
             return new BKTimeoutException();
+        case Code.LedgerIdOverflowException:
+            return new BKLedgerIdOverflowException();
         default:
             return new BKUnexpectedConditionException();
         }
@@ -136,6 +138,7 @@ public abstract class BKException extends Exception {
         int UnclosedFragmentException = -103;
         int WriteOnReadOnlyBookieException = -104;
         int TooManyRequestsException = -105;
+        int LedgerIdOverflowException = -106;
 
         // generic exception code used to propagate in replication pipeline
         int ReplicationException = -200;
@@ -388,6 +391,12 @@ public abstract class BKException extends Exception {
     public static class BKTimeoutException extends BKException {
         public BKTimeoutException() {
             super(Code.TimeoutException);
+        }
+    }
+
+    public static class BKLedgerIdOverflowException extends BKException {
+        public BKLedgerIdOverflowException() {
+            super(Code.LedgerIdOverflowException);
         }
     }
 }

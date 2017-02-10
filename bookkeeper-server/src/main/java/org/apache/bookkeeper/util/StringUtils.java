@@ -119,7 +119,7 @@ public class StringUtils {
             throws IOException {
         String[] longHierarchicalParts = longHierarchicalLedgerPath.split("/");
         if (longHierarchicalParts.length != 5) {
-            throw new IOException("it is not a valid hierarchical path name : " + longHierarchicalLedgerPath);
+            return stringToHierarchicalLedgerId(longHierarchicalLedgerPath);
         }
         longHierarchicalParts[4] =
                 longHierarchicalParts[4].substring(LEDGER_NODE_PREFIX.length());
