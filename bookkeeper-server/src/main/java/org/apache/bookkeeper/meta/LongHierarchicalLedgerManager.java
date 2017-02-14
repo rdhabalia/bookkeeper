@@ -160,6 +160,14 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
     }
 
+    @Override
+    protected boolean isSpecialZnode(String znode) {
+        // Check nextnode length. All paths in long hierarchical format (3-4-4-4-4)
+        // are at least 3 characters long. This prevents picking up any old-style
+        // hierarchical paths (2-4-4)
+        return super.isSpecialZnode(znode) || znode.length() < 3;
+    }
+    
     private class RecursiveProcessor implements Processor<String> {
         private final int level;
         private final String path;
@@ -176,14 +184,6 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
             this.context = context;
             this.successRc = successRc;
             this.failureRc = failureRc;
-        }
-
-        @Override
-        protected boolean isSpecialZnode(String znode) {
-            // Check nextnode length. All paths in long hierarchical format (3-4-4-4-4)
-            // are at least 3 characters long. This prevents picking up any old-style
-            // hierarchical paths (2-4-4)
-            super.isSpecialZnode(znode) || znode.length() < 3;
         }
 
         @Override
