@@ -43,23 +43,31 @@ public class ZkLedgerIdGenerator implements LedgerIdGenerator {
     static final Logger LOG = LoggerFactory.getLogger(ZkLedgerIdGenerator.class);
 
     final ZooKeeper zk;
-    final String ledgerIdGenPath;
     final String ledgerPrefix;
 
     public ZkLedgerIdGenerator(ZooKeeper zk,
                                String ledgersPath,
                                String idGenZnodeName) {
         this.zk = zk;
+        ledgerPrefix = createLedgerPrefix(ledgersPath, idGenZnodeName);
+    }
+
+    public static String createLedgerPrefix(String ledgersPath, String idGenZnodeName) {
+        String ledgerIdGenPath = null;
         if (StringUtils.isBlank(idGenZnodeName)) {
-            this.ledgerIdGenPath = ledgersPath;
+            ledgerIdGenPath = ledgersPath;
         } else {
-            this.ledgerIdGenPath = ledgersPath + "/" + idGenZnodeName;
+            ledgerIdGenPath = ledgersPath + "/" + idGenZnodeName;
         }
-        this.ledgerPrefix = this.ledgerIdGenPath + "/ID-";
+         return ledgerIdGenPath + "/ID-";
     }
 
     @Override
     public void generateLedgerId(final GenericCallback<Long> cb) {
+        generateLedgerIdImpl(cb, zk, ledgerPrefix);
+    }
+
+    public static void generateLedgerIdImpl(final GenericCallback<Long> cb, ZooKeeper zk, String ledgerPrefix) {
         ZkUtils.asyncCreateFullPathOptimistic(zk, ledgerPrefix, new byte[0], Ids.OPEN_ACL_UNSAFE,
                 CreateMode.EPHEMERAL_SEQUENTIAL,
                 new StringCallback() {
@@ -77,7 +85,7 @@ public class ZkLedgerIdGenerator implements LedgerIdGenerator {
                          */
                         long ledgerId;
                         try {
-                            ledgerId = getLedgerIdFromGenPath(idPathName);
+                            ledgerId = getLedgerIdFromGenPath(idPathName, ledgerPrefix);
                             if(ledgerId < 0 || ledgerId >= Integer.MAX_VALUE) {
                                 cb.operationComplete(BKException.Code.LedgerIdOverflowException, null);
                             }
@@ -107,7 +115,7 @@ public class ZkLedgerIdGenerator implements LedgerIdGenerator {
     }
 
     // get ledger id from generation path
-    private long getLedgerIdFromGenPath(String nodeName) throws IOException {
+    private static long getLedgerIdFromGenPath(String nodeName, String ledgerPrefix) throws IOException {
         long ledgerId;
         try {
             String parts[] = nodeName.split(ledgerPrefix);
