@@ -87,15 +87,6 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
     }
 
     @Override
-    public String getLedgerPath(long ledgerId) {
-        if(ledgerId >= 0 && ledgerId < Integer.MAX_VALUE) {
-            // All ids < Integer.MAX_VALUE should still be handled by the old HierarchicalLedgerManager.
-            return ledgerRootPath + StringUtils.getHierarchicalLedgerPath(ledgerId);
-        }
-        return ledgerRootPath + StringUtils.getLongHierarchicalLedgerPath(ledgerId);
-    }
-
-    @Override
     public long getLedgerId(String pathName) throws IOException {
         if (!pathName.startsWith(ledgerRootPath)) {
             throw new IOException("it is not a valid hashed path name : " + pathName);

@@ -57,7 +57,7 @@ public class StringUtils {
      *          ledger id
      * @return the hierarchical path
      */
-    public static String getHierarchicalLedgerPath(long ledgerId) {
+    public static String getShortHierarchicalLedgerPath(long ledgerId) {
         String ledgerIdStr = getZKStringId(ledgerId);
         // do 2-4-4 split
         StringBuilder sb = new StringBuilder();
@@ -76,7 +76,10 @@ public class StringUtils {
      *          ledger id
      * @return the long hierarchical path
      */
-    public static String getLongHierarchicalLedgerPath(long ledgerId) {
+    public static String getHierarchicalLedgerPath(long ledgerId) {
+        if(ledgerId < Integer.MAX_VALUE) {
+            return getShortHierarchicalLedgerPath(ledgerId);
+        }
         String ledgerIdStr = getZKStringIdForLongHierarchical(ledgerId);
         // do 3-4-4-4-4 split
         StringBuilder sb = new StringBuilder();
