@@ -24,6 +24,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.NavigableSet;
 import java.util.NoSuchElementException;
+import java.util.TreeSet;
 
 import org.apache.bookkeeper.conf.AbstractConfiguration;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.Processor;
@@ -64,6 +65,7 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
     static final String IDGEN_ZNODE = "idgen-long";
     private static final String MAX_ID_SUFFIX = "9999";
     private static final String MIN_ID_SUFFIX = "0000";
+    private HierarchicalLedgerManager hierarchicalLedgerManager;
 
 
     /**
@@ -76,6 +78,7 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
      */
     public LongHierarchicalLedgerManager(AbstractConfiguration conf, ZooKeeper zk) {
         super(conf, zk);
+        hierarchicalLedgerManager = new HierarchicalLedgerManager(conf, zk);
     }
 
     @Override
@@ -140,10 +143,12 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
             final Object context, final int successRc, final int failureRc) {
 
         // Process the old 31-bit id ledgers first.
-        super.asyncProcessLedgers(processor, new VoidCallback(){
+        final HierarchicalLedgerManager hlm = new HierarchicalLedgerManager(conf, zk);
+        hlm.asyncProcessLedgers(processor, new VoidCallback(){
 
             @Override
             public void processResult(int rc, String path, Object ctx) {
+                hlm.close();
                 if(rc == failureRc) {
                     // If it fails, return the failure code to the callback
                     finalCb.processResult(rc, path, ctx);
@@ -165,7 +170,7 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
         // Check nextnode length. All paths in long hierarchical format (3-4-4-4-4)
         // are at least 3 characters long. This prevents picking up any old-style
         // hierarchical paths (2-4-4)
-        return super.isSpecialZnode(znode) || znode.length() < 3;
+        return hierarchicalLedgerManager.isSpecialZnode(znode) || znode.length() < 3;
     }
     
     private class RecursiveProcessor implements Processor<String> {
@@ -206,7 +211,7 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
     @Override
     public LedgerRangeIterator getLedgerRanges() {
-        LedgerRangeIterator intLedgerRangeIterator = super.getLedgerRanges();
+        LedgerRangeIterator intLedgerRangeIterator = hierarchicalLedgerManager.getLedgerRanges();
         return new LongHierarchicalLedgerRangeIterator(intLedgerRangeIterator);
     }
 
@@ -338,9 +343,11 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
         @Override
         synchronized public LedgerRange next() throws IOException {
+
             if(intLedgerRangeIterator != null && intLedgerRangeIterator.hasNext()) {
                 // Return the old 31-bit ledger ID ranges until there are no more.
-                return intLedgerRangeIterator.next();
+                LedgerRange ret = intLedgerRangeIterator.next();
+                return ret;
             }
 
             if (!hasNext()) {
