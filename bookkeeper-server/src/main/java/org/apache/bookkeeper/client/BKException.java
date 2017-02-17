@@ -207,6 +207,8 @@ public abstract class BKException extends Exception {
             return "Attempting to write on ReadOnly bookie";
         case Code.TooManyRequestsException:
             return "Too many concurrent requests on bookie";
+        case Code.LedgerIdOverflowException:
+            return "Next ledgerID is too large.";
         case Code.ReplicationException:
             return "Errors in replication pipeline";
         case Code.ClientClosedException:

@@ -89,7 +89,7 @@ public class LongZkLedgerIdGenerator implements LedgerIdGenerator {
             public void operationComplete(int rc, Long result) {
                 if(rc == BKException.Code.OK) {
                     assert((highBits & 0xFFFFFFFF00000000l) == 0);
-                    assert((result & 0x00000000FFFFFFFFl) == 0);
+                    assert((result & 0xFFFFFFFF00000000l) == 0);
                     cb.operationComplete(rc, (highBits << 32) | result);
                 }
                 else if(rc == BKException.Code.LedgerIdOverflowException) {
@@ -197,26 +197,34 @@ public class LongZkLedgerIdGenerator implements LedgerIdGenerator {
                                                       @Override
                                                       public void processResult(int rc, String path, Object ctx, String name) {
                                                           try {
-                                                              ledgerIdGenPathStatus = HighOrderLedgerIdGenPathStatus.PRESENT;
+                                                              setLedgerIdGenPathStatus(HighOrderLedgerIdGenPathStatus.PRESENT);
                                                               generateLongLedgerId(cb);
                                                           } catch (KeeperException e) {
                                                               LOG.error("Failed to create long ledger ID path", e);
-                                                              ledgerIdGenPathStatus = HighOrderLedgerIdGenPathStatus.UNKNOWN;
+                                                              setLedgerIdGenPathStatus(HighOrderLedgerIdGenPathStatus.UNKNOWN);
                                                               cb.operationComplete(BKException.Code.ZKException, null);
                                                           } catch (InterruptedException e) {
                                                               LOG.error("Failed to create long ledger ID path", e);
-                                                              ledgerIdGenPathStatus = HighOrderLedgerIdGenPathStatus.UNKNOWN;
+                                                              setLedgerIdGenPathStatus(HighOrderLedgerIdGenPathStatus.UNKNOWN);
                                                               cb.operationComplete(BKException.Code.InterruptedException, null);
                                                           } catch (IOException e) {
                                                               LOG.error("Failed to create long ledger ID path", e);
-                                                              ledgerIdGenPathStatus = HighOrderLedgerIdGenPathStatus.UNKNOWN;
+                                                              setLedgerIdGenPathStatus(HighOrderLedgerIdGenPathStatus.UNKNOWN);
                                                               cb.operationComplete(BKException.Code.IllegalOpException, null);
                                                           }
                                                       }
                                                   }, null);
     }
 
-    public boolean ledgerIdGenPathPresent(ZooKeeper zk) throws KeeperException, InterruptedException {
+    public void invalidateLedgerIdGenPathStatus() {
+        setLedgerIdGenPathStatus(HighOrderLedgerIdGenPathStatus.UNKNOWN);
+    }
+
+    synchronized private void setLedgerIdGenPathStatus(HighOrderLedgerIdGenPathStatus status) {
+        ledgerIdGenPathStatus = status;
+    }
+
+    synchronized public boolean ledgerIdGenPathPresent(ZooKeeper zk) throws KeeperException, InterruptedException {
         switch(ledgerIdGenPathStatus) {
         case UNKNOWN:
             if(zk.exists(ledgerIdGenPath, false) != null) {

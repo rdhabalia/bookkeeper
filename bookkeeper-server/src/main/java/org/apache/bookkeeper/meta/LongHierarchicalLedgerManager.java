@@ -270,7 +270,7 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
 
         private void clearHigherLevels(int level) {
             for(int i = level+1; i < 4; i++) {
-                curLevelNodes.remove(i);
+                curLevelNodes.set(i, null);
             }
         }
 
