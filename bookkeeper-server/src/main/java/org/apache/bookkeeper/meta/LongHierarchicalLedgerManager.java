@@ -139,12 +139,10 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
             final Object context, final int successRc, final int failureRc) {
 
         // Process the old 31-bit id ledgers first.
-        final HierarchicalLedgerManager hlm = new HierarchicalLedgerManager(conf, zk);
-        hlm.asyncProcessLedgers(processor, new VoidCallback(){
+        hierarchicalLedgerManager.asyncProcessLedgers(processor, new VoidCallback(){
 
             @Override
             public void processResult(int rc, String path, Object ctx) {
-                hlm.close();
                 if(rc == failureRc) {
                     // If it fails, return the failure code to the callback
                     finalCb.processResult(rc, path, ctx);
@@ -390,5 +388,11 @@ class LongHierarchicalLedgerManager extends HierarchicalLedgerManager {
             return new LedgerRange(zkActiveLedgers.subSet(getStartLedgerIdByLevel(level0, level1, level2, level3), true,
                     getEndLedgerIdByLevel(level0, level1, level2, level3), true));
         }
+    }
+
+    @Override
+    public void close() {
+        super.close();
+        hierarchicalLedgerManager.close();
     }
 }
