@@ -178,12 +178,44 @@ public class LongZkLedgerIdGenerator implements LedgerIdGenerator {
                 // else, Start at HOB-0000000001;
                 createHOBPathAndGenerateId(ledgerPrefix, 1, cb);
             }
+            return;
         }
-        else {
-            // Found the largest.
-            // Get the low-order bits.
-            final Long highBits = largest.get();
-            generateLongLedgerIdLowBits(ledgerPrefix, highBits, cb);
+
+        // Found the largest.
+        // Get the low-order bits.
+        final Long highBits = largest.get();
+        generateLongLedgerIdLowBits(ledgerPrefix, highBits, cb);
+
+        // Perform garbage collection on HOB- directories.
+        // Keeping 3 should be plenty to prevent races
+        if(highOrderDirectories.size() > 3) {
+            Object[] highOrderDirs = highOrderDirectories.stream()
+                    .map((t) -> {
+                            try {
+                                return Long.parseLong(t.replace(hobPrefix, ""));
+                            }
+                            catch(NumberFormatException e) {
+                                return null;
+                            }
+                        })
+                    .filter((t) -> t != null)
+                    .sorted()
+                    .toArray();
+
+            // Go ahead and invalidate. We want to reload cache even if we fail.
+            invalidateDirectoryCache();
+
+            for(int i = 0; i < highOrderDirs.length - 3; i++) {
+                String path = ledgerPrefix + formatHalfId(((Long)highOrderDirs[i]).intValue());
+                LOG.debug("DELETING HIGH ORDER DIR: {}", path);
+                try {
+                    zk.delete(path, 0);
+                }
+                catch (KeeperException e) {
+                    // We don't care if we fail. Just warn about it.
+                    LOG.debug("Failed to delete {}", path);
+                }
+            }
         }
     }
 
