@@ -46,13 +46,11 @@ public class HierarchicalLedgerManager extends AbstractHierarchicalLedgerManager
     
     @Override
     protected String getLedgerPath(long ledgerId) {
-        LOG.info("Getting ledger path for id: {}", ledgerId);
         return ledgerRootPath + StringUtils.getHybridHierarchicalLedgerPath(ledgerId);
     }
 
     @Override
     protected long getLedgerId(String ledgerPath) throws IOException {
-        LOG.info("Getting ledger id for path: {}", ledgerPath);
         // TODO Auto-generated method stub
         if (!ledgerPath.startsWith(ledgerRootPath)) {
             throw new IOException("it is not a valid hashed path name : " + ledgerPath);
