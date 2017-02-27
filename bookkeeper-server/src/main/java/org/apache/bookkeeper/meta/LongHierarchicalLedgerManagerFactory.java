@@ -10,10 +10,4 @@ public class LongHierarchicalLedgerManagerFactory extends HierarchicalLedgerMana
     public LedgerManager newLedgerManager() {
         return new LongHierarchicalLedgerManager(conf, zk);
     }
-
-    @Override
-    public LedgerIdGenerator newLedgerIdGenerator() {
-        ZkLedgerIdGenerator subIdGenerator = new ZkLedgerIdGenerator(zk, conf.getZkLedgersRootPath(), HierarchicalLedgerManager.IDGEN_ZNODE);
-        return new LongZkLedgerIdGenerator(zk, conf.getZkLedgersRootPath(), LongHierarchicalLedgerManager.IDGEN_ZNODE, subIdGenerator);
-    }
 }

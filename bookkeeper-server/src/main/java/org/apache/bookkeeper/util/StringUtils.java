@@ -76,10 +76,7 @@ public class StringUtils {
      *          ledger id
      * @return the long hierarchical path
      */
-    public static String getHierarchicalLedgerPath(long ledgerId) {
-        if(ledgerId < Integer.MAX_VALUE) {
-            return getShortHierarchicalLedgerPath(ledgerId);
-        }
+    public static String getLongHierarchicalLedgerPath(long ledgerId) {
         String ledgerIdStr = getZKStringIdForLongHierarchical(ledgerId);
         // do 3-4-4-4-4 split
         StringBuilder sb = new StringBuilder();
@@ -91,6 +88,13 @@ public class StringUtils {
           .append(LEDGER_NODE_PREFIX)
           .append(ledgerIdStr.substring(15, 19));
         return sb.toString();
+    }
+    
+    public static String getHybridHierarchicalLedgerPath(long ledgerId) {
+        if(ledgerId < Integer.MAX_VALUE) {
+            return getShortHierarchicalLedgerPath(ledgerId);
+        }
+        return getLongHierarchicalLedgerPath(ledgerId);
     }
     
     /**
