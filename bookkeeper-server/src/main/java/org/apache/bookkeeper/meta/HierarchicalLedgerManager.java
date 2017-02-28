@@ -32,9 +32,9 @@ import org.apache.zookeeper.ZooKeeper;
  * HierarchicalLedgerManager makes use of both LongHierarchicalLedgerManager and LegacyHierarchicalLedgerManager
  * to extend the 31-bit ledger id range of the LegacyHierarchicalLedgerManager to that of the LongHierarchicalLedgerManager
  * while remaining backwards-compatible with the legacy manager.
- * 
- * In order to achieve backwards-compatibility, the HierarchicalLedgerManager forwards requests relating to ledger IDs which 
- * are < Integer.MAX_INT to the LegacyHierarchicalLedgerManager. The new 5-part directory structure will not appear until a 
+ *
+ * In order to achieve backwards-compatibility, the HierarchicalLedgerManager forwards requests relating to ledger IDs which
+ * are < Integer.MAX_INT to the LegacyHierarchicalLedgerManager. The new 5-part directory structure will not appear until a
  * ledger with an ID >= Integer.MAX_INT is created.
  *
  * @see LongHierarchicalLedgerManager
@@ -42,10 +42,10 @@ import org.apache.zookeeper.ZooKeeper;
  */
 class HierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
     static final Logger LOG = LoggerFactory.getLogger(HierarchicalLedgerManager.class);
-    
+
     LegacyHierarchicalLedgerManager legacyLM;
     LongHierarchicalLedgerManager longLM;
-    
+
     public HierarchicalLedgerManager(AbstractConfiguration conf, ZooKeeper zk) {
         super(conf, zk);
         legacyLM = new LegacyHierarchicalLedgerManager(conf, zk);
@@ -72,7 +72,7 @@ class HierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
 
         }, context, successRc, failureRc);
     }
-    
+
     @Override
     protected String getLedgerPath(long ledgerId) {
         return ledgerRootPath + StringUtils.getHybridHierarchicalLedgerPath(ledgerId);
@@ -94,17 +94,17 @@ class HierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
         LedgerRangeIterator longLedgerRangeIterator = longLM.getLedgerRanges();
         return new HierarchicalLedgerRangeIterator(legacyLedgerRangeIterator, longLedgerRangeIterator);
     }
-    
-    private class HierarchicalLedgerRangeIterator implements LedgerRangeIterator {
-         
+
+    private static class HierarchicalLedgerRangeIterator implements LedgerRangeIterator {
+
         LedgerRangeIterator legacyLedgerRangeIterator;
         LedgerRangeIterator longLedgerRangeIterator;
-        
+
         HierarchicalLedgerRangeIterator(LedgerRangeIterator legacyLedgerRangeIterator, LedgerRangeIterator longLedgerRangeIterator) {
             this.legacyLedgerRangeIterator = legacyLedgerRangeIterator;
             this.longLedgerRangeIterator = longLedgerRangeIterator;
         }
-        
+
         @Override
         public boolean hasNext() throws IOException {
             return legacyLedgerRangeIterator.hasNext() || longLedgerRangeIterator.hasNext();
@@ -117,9 +117,6 @@ class HierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
             }
             return longLedgerRangeIterator.next();
         }
-        
+
     }
-
-    
-
 }
