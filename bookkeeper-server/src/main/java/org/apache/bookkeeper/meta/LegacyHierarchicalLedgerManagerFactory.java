@@ -85,7 +85,7 @@ public class LegacyHierarchicalLedgerManagerFactory extends LedgerManagerFactory
         String ledgersRootPath = conf.getZkLedgersRootPath();
         List<String> children = zk.getChildren(ledgersRootPath, false);
         for (String child : children) {
-            if (HierarchicalLedgerManager.isSpecialZnode(child)) {
+            if (AbstractHierarchicalLedgerManager.isHierarchicalSpecialZnode(child)) {
                 continue;
             }
             ZKUtil.deleteRecursive(zk, ledgersRootPath + "/" + child);

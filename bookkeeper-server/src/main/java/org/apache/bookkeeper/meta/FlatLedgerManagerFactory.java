@@ -86,7 +86,7 @@ public class FlatLedgerManagerFactory extends LedgerManagerFactory {
         String ledgersRootPath = conf.getZkLedgersRootPath();
         List<String> children = zk.getChildren(ledgersRootPath, false);
         for (String child : children) {
-            if (ledgerManager.isSpecialZnode(child)) {
+            if (AbstractZkLedgerManager.isZkLedgerSpecialZnode(child)) {
                 continue;
             }
             ZKUtil.deleteRecursive(zk, ledgersRootPath + "/" + child);

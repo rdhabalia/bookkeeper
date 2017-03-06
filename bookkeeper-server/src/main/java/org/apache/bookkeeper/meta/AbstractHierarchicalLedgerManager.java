@@ -90,7 +90,7 @@ public abstract class AbstractHierarchicalLedgerManager extends AbstractZkLedger
     }
     
     /**
-     * Process list one by one in asynchronize way. Process will be stopped immediately
+     * Process list one by one in asynchronous way. Process will be stopped immediately
      * when error occurred.
      */
     private static class AsyncListProcessor<T> {
@@ -165,6 +165,19 @@ public abstract class AbstractHierarchicalLedgerManager extends AbstractZkLedger
     long getLedgerId(String...levelNodes) throws IOException {
         return StringUtils.stringToHierarchicalLedgerId(levelNodes);
     }
+
+    /**
+     * Whether the znode a special znode
+     *
+     * @param znode
+     *          Znode Name
+     * @return true  if the znode is a special znode otherwise false
+     */
+     protected static boolean isHierarchicalSpecialZnode(String znode) {
+         return AbstractZkLedgerManager.isZkLedgerSpecialZnode(znode)
+             || LegacyHierarchicalLedgerManager.IDGEN_ZNODE.equals(znode)
+             || LongHierarchicalLedgerManager.IDGEN_ZNODE.equals(znode);
+     }
     
     /**
      * Get all ledger ids in the given zk path.
@@ -195,7 +208,7 @@ public abstract class AbstractHierarchicalLedgerManager extends AbstractZkLedger
         }
 
         for (String ledgerNode : ledgerNodes) {
-            if (isSpecialZnode(ledgerNode)) {
+            if (AbstractHierarchicalLedgerManager.isHierarchicalSpecialZnode(ledgerNode)) {
                 continue;
             }
             long ledgerId = ledgerIdPrefix;

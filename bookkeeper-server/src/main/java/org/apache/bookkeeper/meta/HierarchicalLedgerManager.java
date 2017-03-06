@@ -43,8 +43,8 @@ import org.apache.zookeeper.ZooKeeper;
 class HierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
     static final Logger LOG = LoggerFactory.getLogger(HierarchicalLedgerManager.class);
 
-    LegacyHierarchicalLedgerManager legacyLM;
-    LongHierarchicalLedgerManager longLM;
+    private final LegacyHierarchicalLedgerManager legacyLM;
+    private final LongHierarchicalLedgerManager longLM;
 
     public HierarchicalLedgerManager(AbstractConfiguration conf, ZooKeeper zk) {
         super(conf, zk);
@@ -80,7 +80,6 @@ class HierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
 
     @Override
     protected long getLedgerId(String ledgerPath) throws IOException {
-        // TODO Auto-generated method stub
         if (!ledgerPath.startsWith(ledgerRootPath)) {
             throw new IOException("it is not a valid hashed path name : " + ledgerPath);
         }
@@ -97,8 +96,8 @@ class HierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
 
     private static class HierarchicalLedgerRangeIterator implements LedgerRangeIterator {
 
-        LedgerRangeIterator legacyLedgerRangeIterator;
-        LedgerRangeIterator longLedgerRangeIterator;
+        private final LedgerRangeIterator legacyLedgerRangeIterator;
+        private final LedgerRangeIterator longLedgerRangeIterator;
 
         HierarchicalLedgerRangeIterator(LedgerRangeIterator legacyLedgerRangeIterator, LedgerRangeIterator longLedgerRangeIterator) {
             this.legacyLedgerRangeIterator = legacyLedgerRangeIterator;

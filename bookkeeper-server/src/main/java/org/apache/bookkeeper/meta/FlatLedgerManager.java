@@ -134,7 +134,7 @@ class FlatLedgerManager extends AbstractZkLedgerManager {
     protected NavigableSet<Long> ledgerListToSet(List<String> ledgerNodes, String path) {
         NavigableSet<Long> zkActiveLedgers = new TreeSet<Long>();
         for (String ledgerNode : ledgerNodes) {
-            if (isSpecialZnode(ledgerNode)) {
+            if (AbstractZkLedgerManager.isZkLedgerSpecialZnode(ledgerNode)) {
                 continue;
             }
             try {

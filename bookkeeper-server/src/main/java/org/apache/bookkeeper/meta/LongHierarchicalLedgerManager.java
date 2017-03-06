@@ -143,11 +143,12 @@ class LongHierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
                 successRc, failureRc);
     }
 
-    protected static boolean isSpecialZnode(String znode) {
+    protected static boolean isLongHierarchicalSpecialZnode(String znode) {
         // Check nextnode length. All paths in long hierarchical format (3-4-4-4-4)
         // are at least 3 characters long. This prevents picking up any old-style
         // hierarchical paths (2-4-4)
-        return LegacyHierarchicalLedgerManager.isSpecialZnode(znode) || znode.length() < 3;
+        return AbstractHierarchicalLedgerManager.isHierarchicalSpecialZnode(znode)
+            || znode.length() < 3;
     }
     
     private class RecursiveProcessor implements Processor<String> {
@@ -171,7 +172,7 @@ class LongHierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
         @Override
         public void process(String lNode, VoidCallback cb) {
             String nodePath = path + "/" + lNode;
-            if ((level == 0) && isSpecialZnode(lNode)) {
+            if ((level == 0) && LongHierarchicalLedgerManager.isLongHierarchicalSpecialZnode(lNode)) {
                 cb.processResult(successRc, null, context);
                 return;
             } else if (level < 3) {
@@ -215,7 +216,7 @@ class LongHierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
                 levelNodesIter.set(0, l0NodesIter);
                 while (l0NodesIter.hasNext()) {
                     String curL0Node = l0NodesIter.next();
-                    if (!isSpecialZnode(curL0Node)) {
+                    if (!LongHierarchicalLedgerManager.isLongHierarchicalSpecialZnode(curL0Node)) {
                         curLevelNodes.set(0, curL0Node);
                         break;
                     }
@@ -257,7 +258,7 @@ class LongHierarchicalLedgerManager extends AbstractHierarchicalLedgerManager {
             if (level == 0) {
                 while (curLevelNodesIter.hasNext()) {
                     String nextNode = curLevelNodesIter.next();
-                    if (isSpecialZnode(nextNode)) {
+                    if (LongHierarchicalLedgerManager.isLongHierarchicalSpecialZnode(nextNode)) {
                         continue;
                     } else {
                         curLevelNodes.set(level, nextNode);

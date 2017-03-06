@@ -129,7 +129,7 @@ class LegacyHierarchicalLedgerManager extends AbstractHierarchicalLedgerManager 
         asyncProcessLevelNodes(ledgerRootPath, new Processor<String>() {
             @Override
             public void process(final String l1Node, final AsyncCallback.VoidCallback cb1) {
-                if (isSpecialZnode(l1Node)) {
+                if (isHierarchicalSpecialZnode(l1Node)) {
                     cb1.processResult(successRc, null, context);
                     return;
                 }
@@ -149,10 +149,6 @@ class LegacyHierarchicalLedgerManager extends AbstractHierarchicalLedgerManager 
                 }, cb1, context, successRc, failureRc);
             }
         }, finalCb, context, successRc, failureRc);
-    }
-
-    protected static boolean isSpecialZnode(String znode) {
-        return IDGEN_ZNODE.equals(znode) || LongHierarchicalLedgerManager.IDGEN_ZNODE.equals(znode) || AbstractHierarchicalLedgerManager.isSpecialZnode(znode);
     }
 
     @Override
@@ -185,7 +181,7 @@ class LegacyHierarchicalLedgerManager extends AbstractHierarchicalLedgerManager 
                     return false;
                 }
                 // Top level nodes are always exactly 2 digits long. (Don't pick up long hierarchical top level nodes)
-                if (isSpecialZnode(curL1Nodes) || curL1Nodes.length() > 2) {
+                if (isHierarchicalSpecialZnode(curL1Nodes) || curL1Nodes.length() > 2) {
                     continue;
                 }
                 List<String> l2Nodes = zk.getChildren(ledgerRootPath + "/" + curL1Nodes, null);
