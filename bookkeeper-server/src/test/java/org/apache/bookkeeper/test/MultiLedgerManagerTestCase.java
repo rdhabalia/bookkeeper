@@ -28,8 +28,6 @@ import org.junit.runners.Parameterized.Parameters;
  *
  */
 
-import org.apache.bookkeeper.meta.LedgerManagerFactory;
-
 /**
  * Test Case run over different ledger manager.
  */
@@ -44,7 +42,9 @@ public abstract class MultiLedgerManagerTestCase extends BookKeeperClusterTestCa
     public static Collection<Object[]> configs() {
         String[] ledgerManagers = new String[] {
             "org.apache.bookkeeper.meta.FlatLedgerManagerFactory",
+            "org.apache.bookkeeper.meta.LegacyHierarchicalLedgerManagerFactory",
             "org.apache.bookkeeper.meta.HierarchicalLedgerManagerFactory",
+            "org.apache.bookkeeper.meta.LongHierarchicalLedgerManagerFactory",
             "org.apache.bookkeeper.meta.MSLedgerManagerFactory",
         };
         ArrayList<Object[]> cfgs = new ArrayList<Object[]>(ledgerManagers.length);

@@ -477,7 +477,7 @@ public class CompactionTest extends BookKeeperClusterTestCase {
         public LedgerManager getLedgerManager() {
             return new LedgerManager() {
                 @Override
-                public void createLedger(LedgerMetadata metadata, GenericCallback<Long> cb) {
+                public void createLedgerMetadata(long lid, LedgerMetadata metadata, GenericCallback<Void> cb) {
                     unsupported();
                 }
                 @Override

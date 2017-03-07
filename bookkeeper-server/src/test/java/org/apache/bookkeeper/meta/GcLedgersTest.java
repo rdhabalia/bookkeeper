@@ -69,25 +69,41 @@ public class GcLedgersTest extends LedgerManagerTestCase {
     /**
      * Create ledgers
      */
-    private void createLedgers(int numLedgers, final Set<Long> createdLedgers) {
+    private void createLedgers(int numLedgers, final Set<Long> createdLedgers) throws IOException {
         final AtomicInteger expected = new AtomicInteger(numLedgers);
-        for (int i = 0; i < numLedgers; i++) {
-            getLedgerManager().createLedger(new LedgerMetadata(1, 1, 1, DigestType.MAC, "".getBytes()),
-                    new GenericCallback<Long>() {
-                        @Override
-                        public void operationComplete(int rc, Long ledgerId) {
-                            if (rc == BKException.Code.OK) {
-                                activeLedgers.put(ledgerId, true);
-                                createdLedgers.add(ledgerId);
-                            }
-                            synchronized (expected) {
-                                int num = expected.decrementAndGet();
-                                if (num == 0) {
-                                    expected.notify();
-                                }
+
+        for (int i=0; i<numLedgers; i++) {
+            getLedgerIdGenerator().generateLedgerId(new GenericCallback<Long>() {
+                @Override
+                public void operationComplete(int rc, final Long ledgerId) {
+                    if (BKException.Code.OK != rc) {
+                        synchronized (expected) {
+                            int num = expected.decrementAndGet();
+                            if (num == 0) {
+                                expected.notify();
                             }
                         }
-                    });
+                        return;
+                    }
+
+                    getLedgerManager().createLedgerMetadata(ledgerId,
+                            new LedgerMetadata(1, 1, 1, DigestType.MAC, "".getBytes()), new GenericCallback<Void>() {
+                                @Override
+                                public void operationComplete(int rc, Void result) {
+                                    if (rc == BKException.Code.OK) {
+                                        activeLedgers.put(ledgerId, true);
+                                        createdLedgers.add(ledgerId);
+                                    }
+                                    synchronized (expected) {
+                                        int num = expected.decrementAndGet();
+                                        if (num == 0) {
+                                            expected.notify();
+                                        }
+                                    }
+                                }
+                            });
+                }
+            });
         }
         synchronized (expected) {
             try {
@@ -246,7 +262,7 @@ public class GcLedgersTest extends LedgerManagerTestCase {
         assertEquals("Should have cleaned first ledger" + first, (long) first, (long) cleaned.poll());
     }
 
-    @Test(timeout = 60000)
+    @Test(timeout=120000)
     public void testGcLedgersNotLast() throws Exception {
         final SortedSet<Long> createdLedgers = Collections.synchronizedSortedSet(new TreeSet<Long>());
         final List<Long> cleaned = new ArrayList<Long>();

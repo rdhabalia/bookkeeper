@@ -37,16 +37,20 @@ import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.LedgerMetadataLis
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.MultiCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.Processor;
 import org.apache.bookkeeper.util.BookKeeperConstants;
+import org.apache.bookkeeper.util.StringUtils;
 import org.apache.bookkeeper.util.ZkUtils;
 import org.apache.bookkeeper.versioning.Version;
 import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.AsyncCallback.DataCallback;
 import org.apache.zookeeper.AsyncCallback.StatCallback;
+import org.apache.zookeeper.AsyncCallback.StringCallback;
 import org.apache.zookeeper.AsyncCallback.VoidCallback;
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 import org.slf4j.Logger;
@@ -223,6 +227,31 @@ abstract class AbstractZkLedgerManager implements LedgerManager, Watcher {
             }
             break;
         }
+    }
+
+    @Override
+    public void createLedgerMetadata(final long ledgerId, final LedgerMetadata metadata,
+            final GenericCallback<Void> ledgerCb) {
+        String ledgerPath = getLedgerPath(ledgerId);
+        StringCallback scb = new StringCallback() {
+            @Override
+            public void processResult(int rc, String path, Object ctx, String name) {
+                if (rc == Code.OK.intValue()) {
+                    // update version
+                    metadata.setVersion(new ZkVersion(0));
+                    ledgerCb.operationComplete(BKException.Code.OK, null);
+                } else if (rc == Code.NODEEXISTS.intValue()) {
+                    LOG.warn("Failed to create ledger metadata for {} which already exist", ledgerId);
+                    ledgerCb.operationComplete(BKException.Code.LedgerExistException, null);
+                } else {
+                    LOG.error("Could not create node for ledger {}", ledgerId,
+                            KeeperException.create(Code.get(rc), path));
+                    ledgerCb.operationComplete(BKException.Code.ZKException, null);
+                }
+            }
+        };
+        ZkUtils.asyncCreateFullPathOptimistic(zk, ledgerPath, metadata.serialize(), Ids.OPEN_ACL_UNSAFE,
+                CreateMode.PERSISTENT, scb, null);
     }
 
     /**
@@ -446,7 +475,7 @@ abstract class AbstractZkLedgerManager implements LedgerManager, Watcher {
      *          Znode Name
      * @return true  if the znode is a special znode otherwise false
      */
-    protected boolean isSpecialZnode(String znode) {
+     protected static boolean isZkLedgerSpecialZnode(String znode) {
         if (BookKeeperConstants.AVAILABLE_NODE.equals(znode)
                 || BookKeeperConstants.COOKIE_NODE.equals(znode)
                 || BookKeeperConstants.LAYOUT_ZNODE.equals(znode)

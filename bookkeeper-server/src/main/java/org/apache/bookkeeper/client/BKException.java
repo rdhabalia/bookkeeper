@@ -98,6 +98,8 @@ public abstract class BKException extends Exception {
             return new BKIllegalOpException();
         case Code.TimeoutException:
             return new BKTimeoutException();
+        case Code.LedgerIdOverflowException:
+            return new BKLedgerIdOverflowException();
         default:
             return new BKUnexpectedConditionException();
         }
@@ -128,14 +130,15 @@ public abstract class BKException extends Exception {
         int MetadataVersionException = -17;
         int MetaStoreException = -18;
         int ClientClosedException = -19;
+        int LedgerExistException = -20;
         int TimeoutException = -23;
-
         int IllegalOpException = -100;
         int LedgerFencedException = -101;
         int UnauthorizedAccessException = -102;
         int UnclosedFragmentException = -103;
         int WriteOnReadOnlyBookieException = -104;
         int TooManyRequestsException = -105;
+        int LedgerIdOverflowException = -106;
 
         // generic exception code used to propagate in replication pipeline
         int ReplicationException = -200;
@@ -176,6 +179,8 @@ public abstract class BKException extends Exception {
             return "Error while using ZooKeeper";
         case Code.MetaStoreException:
             return "Error while using MetaStore";
+        case Code.LedgerExistException:
+            return "Ledger existed";
         case Code.LedgerRecoveryException:
             return "Error while recovering ledger";
         case Code.LedgerClosedException:
@@ -202,6 +207,8 @@ public abstract class BKException extends Exception {
             return "Attempting to write on ReadOnly bookie";
         case Code.TooManyRequestsException:
             return "Too many concurrent requests on bookie";
+        case Code.LedgerIdOverflowException:
+            return "Next ledgerID is too large.";
         case Code.ReplicationException:
             return "Errors in replication pipeline";
         case Code.ClientClosedException:
@@ -311,6 +318,12 @@ public abstract class BKException extends Exception {
         }
     }
 
+    public static class BKLedgerExistException extends BKException {
+        public BKLedgerExistException() {
+            super(Code.LedgerExistException);
+        }
+    }
+
     public static class BKLedgerRecoveryException extends BKException {
         public BKLedgerRecoveryException() {
             super(Code.LedgerRecoveryException);
@@ -380,6 +393,12 @@ public abstract class BKException extends Exception {
     public static class BKTimeoutException extends BKException {
         public BKTimeoutException() {
             super(Code.TimeoutException);
+        }
+    }
+
+    public static class BKLedgerIdOverflowException extends BKException {
+        public BKLedgerIdOverflowException() {
+            super(Code.LedgerIdOverflowException);
         }
     }
 }

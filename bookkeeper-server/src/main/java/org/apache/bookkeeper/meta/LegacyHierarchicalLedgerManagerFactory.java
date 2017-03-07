@@ -28,11 +28,11 @@ import org.apache.bookkeeper.conf.AbstractConfiguration;
 import org.apache.zookeeper.ZooKeeper;
 
 /**
- * Flat Ledger Manager Factory
+ * Hierarchical Ledger Manager Factory
  */
-public class FlatLedgerManagerFactory extends LedgerManagerFactory {
+public class LegacyHierarchicalLedgerManagerFactory extends LedgerManagerFactory {
 
-    public static final String NAME = "flat";
+    public static final String NAME = "legacyhierarchical";
     public static final int CUR_VERSION = 1;
 
     AbstractConfiguration conf;
@@ -65,28 +65,27 @@ public class FlatLedgerManagerFactory extends LedgerManagerFactory {
 
     @Override
     public LedgerIdGenerator newLedgerIdGenerator() {
-        return new ZkLedgerIdGenerator(zk, conf.getZkLedgersRootPath(), null);
+        return new ZkLedgerIdGenerator(zk, conf.getZkLedgersRootPath(), LegacyHierarchicalLedgerManager.IDGEN_ZNODE);
     }
 
     @Override
     public LedgerManager newLedgerManager() {
-        return new FlatLedgerManager(conf, zk);
+        return new HierarchicalLedgerManager(conf, zk);
     }
 
     @Override
     public LedgerUnderreplicationManager newLedgerUnderreplicationManager()
-            throws KeeperException, InterruptedException, ReplicationException.CompatibilityException {
+            throws KeeperException, InterruptedException, ReplicationException.CompatibilityException{
         return new ZkLedgerUnderreplicationManager(conf, zk);
     }
 
     @Override
     public void format(AbstractConfiguration conf, ZooKeeper zk)
             throws InterruptedException, KeeperException, IOException {
-        FlatLedgerManager ledgerManager = (FlatLedgerManager) newLedgerManager();
         String ledgersRootPath = conf.getZkLedgersRootPath();
         List<String> children = zk.getChildren(ledgersRootPath, false);
         for (String child : children) {
-            if (AbstractZkLedgerManager.isZkLedgerSpecialZnode(child)) {
+            if (AbstractHierarchicalLedgerManager.isHierarchicalSpecialZnode(child)) {
                 continue;
             }
             ZKUtil.deleteRecursive(zk, ledgersRootPath + "/" + child);
@@ -94,4 +93,5 @@ public class FlatLedgerManagerFactory extends LedgerManagerFactory {
         // Delete and recreate the LAYOUT information.
         super.format(conf, zk);
     }
+
 }

@@ -17,19 +17,25 @@
  */
 package org.apache.bookkeeper.meta;
 
-public class HierarchicalLedgerManagerFactory extends LegacyHierarchicalLedgerManagerFactory {
+import java.io.Closeable;
 
-    public static final String NAME = "hierarchical";
+import org.apache.bookkeeper.client.BKException;
+import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 
-    @Override
-    public LedgerManager newLedgerManager() {
-        return new HierarchicalLedgerManager(conf, zk);
-    }
-    
-    @Override
-    public LedgerIdGenerator newLedgerIdGenerator() {
-        ZkLedgerIdGenerator subIdGenerator = new ZkLedgerIdGenerator(zk, conf.getZkLedgersRootPath(), LegacyHierarchicalLedgerManager.IDGEN_ZNODE);
-        return new LongZkLedgerIdGenerator(zk, conf.getZkLedgersRootPath(), LongHierarchicalLedgerManager.IDGEN_ZNODE, subIdGenerator);
-    }
-    
+/**
+ * The interface for global unique ledger ID generation
+ */
+public interface LedgerIdGenerator extends Closeable {
+
+    /**
+     * generate a global unique ledger id
+     *
+     * @param cb
+     *            Callback when a new ledger id is generated, return code:<ul>
+     *            <li>{@link BKException.Code.OK} if success</li>
+     *            <li>{@link BKException.Code.ZKException} when can't generate new ledger id</li>
+     *            </ul>
+     */
+    public void generateLedgerId(GenericCallback<Long> cb);
+
 }

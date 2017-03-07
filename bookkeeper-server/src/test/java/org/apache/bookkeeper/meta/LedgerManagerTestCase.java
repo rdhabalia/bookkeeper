@@ -58,6 +58,7 @@ public abstract class LedgerManagerTestCase extends BookKeeperClusterTestCase {
 
     protected LedgerManagerFactory ledgerManagerFactory;
     protected LedgerManager ledgerManager = null;
+    protected LedgerIdGenerator ledgerIdGenerator = null;
     protected SnapshotMap<Long, Boolean> activeLedgers = null;
 
     public LedgerManagerTestCase(Class<? extends LedgerManagerFactory> lmFactoryCls) {
@@ -77,12 +78,20 @@ public abstract class LedgerManagerTestCase extends BookKeeperClusterTestCase {
         return ledgerManager;
     }
 
+    public LedgerIdGenerator getLedgerIdGenerator() throws IOException {
+        if (null == ledgerIdGenerator) {
+            ledgerIdGenerator = ledgerManagerFactory.newLedgerIdGenerator();
+        }
+        return ledgerIdGenerator;
+    }
+
     @Parameters
     public static Collection<Object[]> configs() {
         return Arrays.asList(new Object[][] {
             { FlatLedgerManagerFactory.class },
             { HierarchicalLedgerManagerFactory.class },
-            { MSLedgerManagerFactory.class }
+            { LongHierarchicalLedgerManagerFactory.class },
+            { MSLedgerManagerFactory.class },
         });
     }
 
