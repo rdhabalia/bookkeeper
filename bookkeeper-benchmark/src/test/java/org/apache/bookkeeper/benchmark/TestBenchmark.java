@@ -123,7 +123,10 @@ public class TestBenchmark extends BookKeeperClusterTestCase {
                 "--zookeeper", zkUtil.getZooKeeperConnectString(),
                 "--ledger", String.valueOf(lastLedgerId)});
 
-        final long nextLedgerId = lastLedgerId+1;
+        BookKeeper bk = new BookKeeper(zkUtil.getZooKeeperConnectString());
+        LedgerHandle lh = bk.createLedger(BookKeeper.DigestType.CRC32, "benchPasswd".getBytes());
+        final long nextLedgerId = lh.getId();
+        
         t = new Thread() {
                 public void run() {
                     try {
@@ -139,8 +142,7 @@ public class TestBenchmark extends BookKeeperClusterTestCase {
         t.start();
 
         Assert.assertTrue("Thread should be running", t.isAlive());
-        BookKeeper bk = new BookKeeper(zkUtil.getZooKeeperConnectString());
-        LedgerHandle lh = bk.createLedger(BookKeeper.DigestType.CRC32, "benchPasswd".getBytes());
+
         try {
             for (int j = 0; j < 100; j++) {
                 lh.addEntry(data);
