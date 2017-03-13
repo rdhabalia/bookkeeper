@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.locks.StampedLock;
 
 import org.apache.bookkeeper.stats.OpStatsData;
 import org.apache.bookkeeper.stats.OpStatsLogger;
@@ -56,13 +57,28 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
     @Override
     public void registerSuccessfulEvent(long eventLatency, TimeUnit unit) {
         successCountAdder.increment();
-        current.sketch.get().update(unit.toMicros(eventLatency) / 1000.0);
+        LocalData localData = current.localData.get();
+
+        long stamp = localData.lock.readLock();
+        try {
+            localData.sketch.update(unit.toMicros(eventLatency) / 1000.0);
+        } finally {
+            localData.lock.unlockRead(stamp);
+        }
     }
 
     @Override
     public void registerSuccessfulValue(long value) {
         successCountAdder.increment();
-        current.sketch.get().update(value);
+
+        LocalData localData = current.localData.get();
+
+        long stamp = localData.lock.readLock();
+        try {
+            localData.sketch.update(value);
+        } finally {
+            localData.lock.unlockRead(stamp);
+        }
     }
 
     @Override
@@ -82,9 +98,14 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         replacement = local;
 
         final DoublesUnion aggregate = new DoublesUnionBuilder().build();
-        local.map.forEach((sketch, b) -> {
-            aggregate.update(sketch);
-            sketch.reset();
+        local.map.forEach((localData, b) -> {
+            long stamp = localData.lock.writeLock();
+            try {
+                aggregate.update(localData.sketch);
+                localData.sketch.reset();
+            } finally {
+                localData.lock.unlockWrite(stamp);
+            }
         });
 
         result = aggregate.getResultAndReset();
@@ -141,22 +162,26 @@ public class DataSketchesOpStatsLogger implements OpStatsLogger {
         return result != null ? result.getMaxValue() : 0;
     }
 
+    private static class LocalData {
+        private final DoublesSketch sketch = new DoublesSketchBuilder().build();
+        private final StampedLock lock = new StampedLock();
+    }
+
     private static class ThreadLocalAccessor {
-        private final Map<DoublesSketch, Boolean> map = new ConcurrentHashMap<>();
-        private final FastThreadLocal<DoublesSketch> sketch = new FastThreadLocal<DoublesSketch>() {
+        private final Map<LocalData, Boolean> map = new ConcurrentHashMap<>();
+        private final FastThreadLocal<LocalData> localData = new FastThreadLocal<LocalData>() {
 
             @Override
-            protected DoublesSketch initialValue() throws Exception {
-                DoublesSketch s = new DoublesSketchBuilder().build();
-                map.put(s, Boolean.TRUE);
-                return s;
+            protected LocalData initialValue() throws Exception {
+                LocalData localData = new LocalData();
+                map.put(localData, Boolean.TRUE);
+                return localData;
             }
 
             @Override
-            protected void onRemoval(DoublesSketch value) throws Exception {
+            protected void onRemoval(LocalData value) throws Exception {
                 map.remove(value);
             }
-
         };
     }
 }
