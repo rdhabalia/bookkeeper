@@ -331,7 +331,7 @@ public class TestAuth extends BookKeeperClusterTestCase {
      * Test that when a bookie simply stops replying during auth, the client doesn't
      * hang also, but it cannot write in any case.
      */
-    @Test(timeout=30000)
+    @Test(timeout=60000)
     public void testCrashType2DuringAuth() throws Exception {
         ServerConfiguration bookieConf = newServerConfiguration();
         bookieConf.setBookieAuthProviderFactoryClass(
