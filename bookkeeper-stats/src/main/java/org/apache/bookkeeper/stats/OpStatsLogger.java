@@ -29,7 +29,7 @@ public interface OpStatsLogger {
      * @param eventLatencyMillis The event latency
      * @param unit
      */
-    public void registerFailedEvent(long eventLatency, TimeUnit unit);
+    public void registerFailedEvent(long eventLatencyMillis, TimeUnit unit);
 
     /**
      * An operation succeeded with the given eventLatencyNanos. Update
@@ -37,7 +37,7 @@ public interface OpStatsLogger {
      * @param eventLatencyMillis The event latency
      * @param unit
      */
-    public void registerSuccessfulEvent(long eventLatency, TimeUnit unit);
+    public void registerSuccessfulEvent(long eventLatencyMillis, TimeUnit unit);
     
     /**
      * An operation with the given value succeeded

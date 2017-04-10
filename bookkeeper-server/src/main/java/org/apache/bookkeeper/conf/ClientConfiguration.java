@@ -421,7 +421,7 @@ public class ClientConfiguration extends AbstractConfiguration {
      */
     @Deprecated
     public int getReadTimeout() {
-        return getInt(READ_TIMEOUT, 5);
+        return getInt(READ_TIMEOUT, 20);
     }
 
     /**
