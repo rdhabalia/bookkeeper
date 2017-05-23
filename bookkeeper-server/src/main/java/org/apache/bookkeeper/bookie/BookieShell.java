@@ -42,8 +42,11 @@ import java.util.concurrent.TimeUnit;
 import org.apache.bookkeeper.bookie.BookieException.InvalidCookieException;
 import org.apache.bookkeeper.bookie.EntryLogger.EntryLogScanner;
 import org.apache.bookkeeper.bookie.Journal.JournalScanner;
+import org.apache.bookkeeper.bookie.storage.ldb.ArrayUtil;
 import org.apache.bookkeeper.bookie.storage.ldb.DbLedgerStorage;
 import org.apache.bookkeeper.bookie.storage.ldb.EntryLocationIndex;
+import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageFactory.DbConfigType;
+import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageRocksDB;
 import org.apache.bookkeeper.bookie.storage.ldb.LocationsIndexRebuildOp;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
@@ -91,6 +94,7 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.AbstractFuture;
 
 import io.netty.buffer.ByteBuf;
@@ -390,12 +394,19 @@ public class BookieShell implements Tool {
                 printUsage();
                 return -1;
             }
-            if (printMeta) {
-                // print meta
-                readLedgerMeta(ledgerId);
+            
+            if (bkConf.getLedgerStorageClass().equals(DbLedgerStorage.class.getName())) {
+                // dump ledger info
+                return readLedgerIndexEntriesFromDbLedgerStorage(ledgerId);
+            } else {
+                if (printMeta) {
+                    // print meta
+                    readLedgerMeta(ledgerId);
+                }
+                // dump ledger info
+                readLedgerIndexEntries(ledgerId);
             }
-            // dump ledger info
-            readLedgerIndexEntries(ledgerId);
+            
             return 0;
         }
 
@@ -2003,7 +2014,7 @@ public class BookieShell implements Tool {
     }
 
     /**
-     * Read ledger index entires
+     * Read ledger index entries
      *
      * @param ledgerId
      *          Ledger Id
@@ -2047,6 +2058,57 @@ public class BookieShell implements Tool {
                                  + ", the index file may be corrupted or last index page is not fully flushed yet : " + ie.getMessage());
             }
         }
+    }
+
+    /**
+     * Read ledger index entries
+     * 
+     * @param ledgerId
+     * @return
+     * @throws IOException if failed to init KeyValueStorageRocksDB
+     */
+    protected int readLedgerIndexEntriesFromDbLedgerStorage(long ledgerId) throws IOException {
+
+        ServerConfiguration conf = new ServerConfiguration(bkConf);
+        LedgerDirsManager ledgerDirsManager = new LedgerDirsManager(bkConf, bkConf.getLedgerDirs());
+
+        String ledgersPath = ledgerDirsManager.getAllLedgerDirs().get(0).toString();
+        String locationsDbPath = FileSystems.getDefault().getPath(ledgersPath, "locations").toFile().toString();
+        KeyValueStorageRocksDB ledgersDb;
+        try {
+            ledgersDb = new KeyValueStorageRocksDB(locationsDbPath, DbConfigType.Small, conf, true);
+        } catch (IOException e) {
+            System.err.printf("ERROR: initializing rocksDb storage %s", e.getMessage());
+            return -1;
+        }
+        try {
+            byte[] array = new byte[16];
+            for (long curEntry = 0; curEntry <= Long.MAX_VALUE; curEntry++) {
+                ArrayUtil.setLong(array, 0, ledgerId);
+                ArrayUtil.setLong(array, 8, curEntry);
+                byte[] value = new byte[8];
+                try {
+                    int code = ledgersDb.get(array, value);
+                    if (code <= 0) {
+                        // no-more entry found
+                        System.out.println("entry " + curEntry + "\t:\tN/A");
+                        break;
+                    }
+                    long offset = ArrayUtil.getLong(value, 0);
+                    long entryLogId = offset >> 32L;
+                    long pos = offset & 0xffffffffL;
+                    System.out.println("entry " + curEntry + "\t:\t(log:" + entryLogId + ", pos: " + pos + ")");
+                } catch (Exception e) {
+                    System.err.println("ERROR: while getting location for entry " + ledgerId + ", " + curEntry + ", "
+                            + e.getMessage());
+                    break;
+                }
+            }
+        } finally {
+            ledgersDb.close();
+        }
+
+        return 0;
     }
 
     /**

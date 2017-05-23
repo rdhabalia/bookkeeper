@@ -7,13 +7,13 @@ import io.netty.util.internal.PlatformDependent;
 /**
  * Utility to serialize/deserialize longs into byte arrays
  */
-class ArrayUtil {
+public class ArrayUtil {
 
     private static final boolean UNALIGNED = PlatformDependent.isUnaligned();
     private static final boolean HAS_UNSAFE = PlatformDependent.hasUnsafe();
     private static final boolean BIG_ENDIAN_NATIVE_ORDER = ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN;
 
-    static long getLong(byte[] array, int index) {
+    public static long getLong(byte[] array, int index) {
         if (HAS_UNSAFE && UNALIGNED) {
             long v = PlatformDependent.getLong(array, index);
             return BIG_ENDIAN_NATIVE_ORDER ? v : Long.reverseBytes(v);
@@ -29,7 +29,7 @@ class ArrayUtil {
                 (long) array[index + 7] & 0xff;
     }
 
-    static void setLong(byte[] array, int index, long value) {
+    public static void setLong(byte[] array, int index, long value) {
         if (HAS_UNSAFE && UNALIGNED) {
             PlatformDependent.putLong(array, index, BIG_ENDIAN_NATIVE_ORDER ? value : Long.reverseBytes(value));
         } else {
