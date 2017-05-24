@@ -46,6 +46,7 @@ public class LedgerCmdTest extends BookKeeperClusterTestCase {
         super(1);
         baseConf.setLedgerStorageClass(DbLedgerStorage.class.getName());
         baseConf.setGcWaitTime(60000);
+        baseConf.setFlushInterval(1);
     }
 
     
@@ -59,7 +60,6 @@ public class LedgerCmdTest extends BookKeeperClusterTestCase {
         LOG.info("Create ledger and add entries to it");
         LedgerHandle lh1 = createLedgerWithEntries(bk, 10);
         
-        Thread.sleep(1000); // sleep to flush entries to logger file
         String[] argv = new String[] { "ledger", Long.toString(lh1.getId()) };
         final ServerConfiguration conf = bsConfs.get(0);
         conf.setUseHostNameAsBookieID(true);
