@@ -392,10 +392,17 @@ public class BookieShell implements Tool {
                 printUsage();
                 return -1;
             }
-            
+
             if (bkConf.getLedgerStorageClass().equals(DbLedgerStorage.class.getName())) {
                 // dump ledger info
-                return readLedgerIndexEntriesFromDbLedgerStorage(ledgerId);
+                try {
+                    DbLedgerStorage.readLedgerIndexEntries(ledgerId, bkConf,
+                            (currentEntry, entryLogId, position) -> System.out.println(
+                                    "entry " + currentEntry + "\t:\t(log: " + entryLogId + ", pos: " + position + ")"));
+                } catch (IOException e) {
+                    System.err.printf("ERROR: initializing dbLedgerStorage %s", e.getMessage());
+                    return -1;
+                }
             } else {
                 if (printMeta) {
                     // print meta
@@ -404,7 +411,7 @@ public class BookieShell implements Tool {
                 // dump ledger info
                 readLedgerIndexEntries(ledgerId);
             }
-            
+
             return 0;
         }
 
@@ -2057,53 +2064,6 @@ public class BookieShell implements Tool {
             }
         }
     }
-
-    /**
-     * Read ledger index entries
-     * 
-     * @param ledgerId
-     * @return
-     * @throws IOException if failed to init KeyValueStorageRocksDB
-     */
-	protected int readLedgerIndexEntriesFromDbLedgerStorage(long ledgerId) throws IOException {
-
-		ServerConfiguration conf = new ServerConfiguration(bkConf);
-		LedgerDirsManager ledgerDirsManager = new LedgerDirsManager(bkConf, bkConf.getLedgerDirs());
-		String ledgersPath = ledgerDirsManager.getAllLedgerDirs().get(0).toString();
-
-		EntryLocationIndex entryLocationIndex = null;
-
-		try {
-			entryLocationIndex = new EntryLocationIndex(conf,
-					(path, dbConfigType, conf1) -> new KeyValueStorageRocksDB(path, DbConfigType.Small, conf1, true),
-					ledgersPath, NullStatsLogger.INSTANCE);
-		} catch (IOException e) {
-			System.err.printf("ERROR: initializing rocksDb storage %s", e.getMessage());
-			return -1;
-		}
-		try {
-			long lastEntryId = entryLocationIndex.getLastEntryInLedger(ledgerId);
-			for (long curEntry = 0; curEntry <= lastEntryId; curEntry++) {
-				try {
-					long offset = entryLocationIndex.getLocation(ledgerId, curEntry);
-					if (offset <= 0) {
-						// entry not found in this bookie
-						continue;
-					}
-					long entryLogId = offset >> 32L;
-					long pos = offset & 0xffffffffL;
-					System.out.println("entry " + curEntry + "\t:\t(log: " + entryLogId + ", pos: " + pos + ")");
-				} catch (Exception e) {
-					System.err.println("ERROR: while getting location for entry " + ledgerId + ", " + curEntry + ", "
-							+ e.getMessage());
-				}
-			}
-		} finally {
-			entryLocationIndex.close();
-		}
-
-		return 0;
-	}
 
     /**
      * Get an iterable over pages of entries and locations for a ledger
