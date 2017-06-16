@@ -60,7 +60,7 @@ public class PrometheusOpStatsLogger implements OpStatsLogger {
         success.observe(value);
     }
 
-    @Override
+    //@Override : uncomment once this method added into parent
     public void registerFailedValue(long value) {
         fail.observe(value);
     }
