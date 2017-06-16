@@ -65,6 +65,7 @@ import org.apache.bookkeeper.proto.BookieClient;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.replication.AuditorElector;
 import org.apache.bookkeeper.stats.NullStatsLogger;
+import org.apache.bookkeeper.util.BookKeeperConstants;
 import org.apache.bookkeeper.util.EntryFormatter;
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.OrderedSafeExecutor;
@@ -1955,7 +1956,8 @@ public class BookieShell implements Tool {
         if (null == journals) {
             journals = Lists.newArrayListWithCapacity(bkConf.getJournalDirNames().length);
             for (File journalDir : bkConf.getJournalDirs()) {
-                journals.add(new Journal(journalDir, bkConf, new LedgerDirsManager(bkConf, bkConf.getLedgerDirs())));
+                journals.add(new Journal(new File(journalDir, BookKeeperConstants.CURRENT_DIR), bkConf,
+                        new LedgerDirsManager(bkConf, bkConf.getLedgerDirs())));
             }
         }
         return journals;
