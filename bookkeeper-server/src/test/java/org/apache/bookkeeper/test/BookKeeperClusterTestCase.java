@@ -328,7 +328,9 @@ public abstract class BookKeeperClusterTestCase {
                 Thread sleeper = new Thread() {
                     public void run() {
                         try {
+                            System.out.println("WAITING");
                             l.await();
+                            System.out.println("DONE WAITING");
                             bookie.resumeProcessing();
                         } catch (Exception e) {
                             LOG.error("Error suspending bookie", e);

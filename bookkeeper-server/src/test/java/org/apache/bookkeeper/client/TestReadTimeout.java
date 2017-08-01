@@ -50,7 +50,6 @@ public class TestReadTimeout extends BookKeeperClusterTestCase {
         this.digestType = DigestType.CRC32;
     }
 
-    @Ignore
     @SuppressWarnings("deprecation")
     @Test(timeout=60000)
     public void testReadTimeout() throws Exception {

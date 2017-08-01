@@ -23,7 +23,6 @@ public class TestBookieHealthCheck extends BookKeeperClusterTestCase {
         baseClientConf.setBookieQuarantineTime(5, TimeUnit.SECONDS);
     }
 
-    @Ignore
     @Test
     public void testBkQuarantine() throws Exception {
         LedgerHandle lh = bkc.createLedger(2, 2, 2, BookKeeper.DigestType.CRC32, new byte[] {});

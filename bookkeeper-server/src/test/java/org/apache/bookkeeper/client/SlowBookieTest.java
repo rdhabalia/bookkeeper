@@ -49,14 +49,8 @@ public class SlowBookieTest extends BookKeeperClusterTestCase {
         baseConf.setNumReadWorkerThreads(0);
     }
 
-    @Ignore
     @Test(timeout=60000)
     public void testSlowBookie() throws Exception {
-        ClientConfiguration conf = new ClientConfiguration();
-        conf.setZkServers(zkUtil.getZooKeeperConnectString()).setReadTimeout(360);
-
-        BookKeeper bkc = new BookKeeper(conf);
-
         LedgerHandle lh = bkc.createLedger(4, 3, 2, BookKeeper.DigestType.CRC32, new byte[] {});
 
         byte[] entry = "Test Entry".getBytes();
@@ -65,7 +59,6 @@ public class SlowBookieTest extends BookKeeperClusterTestCase {
         }
         final CountDownLatch b0latch = new CountDownLatch(1);
         final CountDownLatch b1latch = new CountDownLatch(1);
-        final CountDownLatch addEntrylatch = new CountDownLatch(1);
         List<BookieSocketAddress> curEns = lh.getLedgerMetadata().currentEnsemble;
         try {
             sleepBookie(curEns.get(0), b0latch);
@@ -74,25 +67,23 @@ public class SlowBookieTest extends BookKeeperClusterTestCase {
             }
             sleepBookie(curEns.get(2), b1latch); // should cover all quorums
 
-            final AtomicInteger i = new AtomicInteger(0xdeadbeef);
+            final AtomicInteger atomicInteger = new AtomicInteger(0xdeadbeef);
             AsyncCallback.AddCallback cb = new AsyncCallback.AddCallback() {
                     public void addComplete(int rc, LedgerHandle lh, long entryId, Object ctx) {
-                        i.set(rc);
-                        addEntrylatch.countDown();
+                        atomicInteger.set(rc);
                     }
                 };
             lh.asyncAddEntry(entry, cb, null);
 
-            Thread.sleep(3000); // sleep 3 seconds to allow time to complete
-            assertEquals("Successfully added entry!", 0xdeadbeef, i.get());
+            assertEquals("Failed to add entry!", 0xdeadbeef, atomicInteger.get());
             b0latch.countDown();
             b1latch.countDown();
-            addEntrylatch.await(4000, TimeUnit.MILLISECONDS);
-            assertEquals("Failed to add entry!", BKException.Code.OK, i.get());
+            // Sleep a bit to let it finish doing the entry
+            Thread.sleep(3000);
+            assertEquals("Added entry", BKException.Code.OK, atomicInteger.get());
         } finally {
             b0latch.countDown();
             b1latch.countDown();
-            addEntrylatch.countDown();
         }
     }
 
