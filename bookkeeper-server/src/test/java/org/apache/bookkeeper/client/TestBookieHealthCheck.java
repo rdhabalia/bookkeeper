@@ -1,5 +1,6 @@
 package org.apache.bookkeeper.client;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.bookkeeper.client.AsyncCallback.AddCallback;
@@ -33,20 +34,22 @@ public class TestBookieHealthCheck extends BookKeeperClusterTestCase {
             lh.addEntry(msg);
         }
 
-        BookieSocketAddress bookieToQuarantine = lh.getLedgerMetadata().getEnsemble(numEntries).get(0);
-        sleepBookie(bookieToQuarantine, baseClientConf.getAddEntryTimeout() * 2).await();
+        BookieSocketAddress bookieToQuarantine = lh.getLedgerMetadata().currentEnsemble.get(0);
+
+        CountDownLatch addEntryLatch = new CountDownLatch(1);
+        sleepBookie(bookieToQuarantine, addEntryLatch).await();
 
         byte[] tempMsg = "temp-msg".getBytes();
+
+        // Wait for bookie to completely suspend processing
+        Thread.sleep(2000);
         lh.asyncAddEntry(tempMsg, new AddCallback() {
 
             @Override
             public void addComplete(int rc, LedgerHandle lh, long entryId, Object ctx) {
-                // no-op
+                addEntryLatch.countDown();
             }
         }, null);
-
-        // make sure the add entry timeouts
-        Thread.sleep(baseClientConf.getAddEntryTimeout() * 2 * 1000);
 
         // make sure the health check runs once after the timeout
         Thread.sleep(baseClientConf.getBookieHealthCheckIntervalSeconds() * 2 * 1000);

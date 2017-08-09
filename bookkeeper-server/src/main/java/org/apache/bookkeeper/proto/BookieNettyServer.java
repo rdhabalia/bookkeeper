@@ -126,6 +126,9 @@ class BookieNettyServer {
         synchronized (suspensionLock) {
             suspended = true;
             for (Channel channel : allChannels) {
+                if(channel.isOpen()) {
+                    channel.close();
+                }
                 channel.config().setAutoRead(false);
             }
         }
