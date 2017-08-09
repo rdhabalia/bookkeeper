@@ -669,12 +669,11 @@ public class RackawareEnsemblePlacementPolicy implements EnsemblePlacementPolicy
         IntArrayList unAvailableList = new IntArrayList(writeSet.size());
         writeSet.forEach((IntProcedure) idx -> {
             BookieSocketAddress address = ensemble.get(idx);
-            if (!knownBookies.containsKey(address)) {
+            if ((null == knownBookies.get(address))) {
                 // there isn't too much differences between readonly bookies from unavailable bookies. since there
                 // is no write requests to them, so we shouldn't try reading from readonly bookie in prior to
                 // writable bookies.
                 if ((null == readOnlyBookies) || !readOnlyBookies.contains(address)) {
-                    System.out.println("YO1");
                     unAvailableList.add(idx);
                 } else {
                     readOnlyList.add(idx);

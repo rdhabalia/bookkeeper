@@ -49,6 +49,7 @@ public class SlowBookieTest extends BookKeeperClusterTestCase {
         baseConf.setNumReadWorkerThreads(0);
     }
 
+    @Ignore
     @Test(timeout=60000)
     public void testSlowBookie() throws Exception {
         LedgerHandle lh = bkc.createLedger(4, 3, 2, BookKeeper.DigestType.CRC32, new byte[] {});
@@ -141,6 +142,7 @@ public class SlowBookieTest extends BookKeeperClusterTestCase {
         assertEquals("There should be no missing fragments", 0, numFragments.get());
     }
 
+    @Ignore
     @Test(timeout=60000)
     public void testManyBookieFailureWithSlowBookies() throws Exception {
         ClientConfiguration conf = new ClientConfiguration();
