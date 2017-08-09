@@ -128,9 +128,9 @@ public class TestRackawareEnsemblePlacementPolicy {
         repp.onClusterChanged(addrs, new HashSet<BookieSocketAddress>());
 
         ArrayList<BookieSocketAddress> ensemble = new ArrayList<>(addrs);
-        IntArrayList writeSet = new IntArrayList(ensemble.size());
+        IntArrayList originalWriteSet = new IntArrayList(ensemble.size());
         for (int i = 0; i < ensemble.size(); i++) {
-            writeSet.add(i);
+            originalWriteSet.add(i);
         }
 
         Set<BookieSocketAddress> readonly = new HashSet<BookieSocketAddress>();
@@ -138,15 +138,15 @@ public class TestRackawareEnsemblePlacementPolicy {
         addrs.remove(addr1);
         repp.onClusterChanged(addrs, readonly);
 
-        IntArrayList reoderSet = repp.reorderReadSequence(ensemble, writeSet);
-        IntArrayList expectedSet = new IntArrayList(writeSet.size());
+        IntArrayList reorderedSet = repp.reorderReadSequence(ensemble, originalWriteSet);
+        IntArrayList expectedSet = new IntArrayList(originalWriteSet.size());
         expectedSet.add(1);
         expectedSet.add(2);
         expectedSet.add(3);
         expectedSet.add(0);
-        LOG.info("reorder set : {}", reoderSet);
-        assertFalse(reoderSet == writeSet);
-        assertEquals(expectedSet, reoderSet);
+        LOG.info("reorder set : {}", reorderedSet);
+        assertFalse(reorderedSet == originalWriteSet);
+        assertEquals(expectedSet, reorderedSet);
     }
 
     @Test(timeout = 60000)
