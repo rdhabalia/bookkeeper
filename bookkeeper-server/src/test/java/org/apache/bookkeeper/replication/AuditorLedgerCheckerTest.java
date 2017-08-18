@@ -261,7 +261,6 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
      * Test Auditor should consider Readonly bookie as available bookie. Should not publish ur ledgers for
      * readonly bookies.
      */
-    @Ignore
     @Test(timeout = 20000)
     public void testReadOnlyBookieExclusionFromURLedgersCheck() throws Exception {
         LedgerHandle lh = createAndAddEntriesToLedger();
@@ -284,7 +283,6 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
     /**
      * Test Auditor should consider Readonly bookie fail and publish ur ledgers for readonly bookies.
      */
-    @Ignore
     @Test(timeout = 20000)
     public void testReadOnlyBookieShutdown() throws Exception {
         LedgerHandle lh = createAndAddEntriesToLedger();
