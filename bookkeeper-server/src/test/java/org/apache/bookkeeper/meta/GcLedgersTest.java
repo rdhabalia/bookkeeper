@@ -56,6 +56,8 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.collect.Sets;
+
 /**
  * Test garbage collection ledgers in ledger manager
  */
@@ -166,7 +168,7 @@ public class GcLedgersTest extends LedgerManagerTestCase {
         final CountDownLatch endLatch = new CountDownLatch(2);
         final CompactableLedgerStorage mockLedgerStorage = new MockLedgerStorage();
         final GarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(getLedgerManager(),
-                mockLedgerStorage, null, null, false, baseConf.getZkLedgersRootPath());
+                mockLedgerStorage, null, null, false, baseConf.getZkLedgersRootPath(), Sets.newHashSet());
         Thread gcThread = new Thread() {
             @Override
             public void run() {
@@ -237,7 +239,7 @@ public class GcLedgersTest extends LedgerManagerTestCase {
         createLedgers(numLedgers, createdLedgers);
 
         final GarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(getLedgerManager(),
-                new MockLedgerStorage(), null, null, false, baseConf.getZkLedgersRootPath());
+                new MockLedgerStorage(), null, null, false, baseConf.getZkLedgersRootPath(), Sets.newHashSet());
         GarbageCollector.GarbageCleaner cleaner = new GarbageCollector.GarbageCleaner() {
             @Override
             public void clean(long ledgerId) {
@@ -273,7 +275,7 @@ public class GcLedgersTest extends LedgerManagerTestCase {
         createLedgers(numLedgers, createdLedgers);
 
         final GarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(getLedgerManager(),
-                new MockLedgerStorage(), null, null, false, baseConf.getZkLedgersRootPath());
+                new MockLedgerStorage(), null, null, false, baseConf.getZkLedgersRootPath(), Sets.newHashSet());
         GarbageCollector.GarbageCleaner cleaner = new GarbageCollector.GarbageCleaner() {
             @Override
             public void clean(long ledgerId) {

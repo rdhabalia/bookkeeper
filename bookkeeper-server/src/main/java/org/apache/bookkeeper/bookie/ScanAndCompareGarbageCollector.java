@@ -69,16 +69,18 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
     private final boolean checkOverReplicatedLedgers;
     private final ZooKeeper zk;
     private final String zkLedgersRootPath;
+    private final Set<Long> retainedLedgerIds;
 
     public ScanAndCompareGarbageCollector(LedgerManager ledgerManager, CompactableLedgerStorage ledgerStorage,
             BookieSocketAddress selfBookieAddress, ZooKeeper zk, boolean checkOverReplicatedLedgers,
-            String zkLedgersRootPath) {
+            String zkLedgersRootPath, Set<Long> retainedLedgerIds) {
         this.ledgerManager = ledgerManager;
         this.ledgerStorage = ledgerStorage;
         this.selfBookieAddress = selfBookieAddress;
         this.checkOverReplicatedLedgers = checkOverReplicatedLedgers;
         this.zk = zk;
         this.zkLedgersRootPath = zkLedgersRootPath;
+        this.retainedLedgerIds = retainedLedgerIds;
     }
 
     @Override
@@ -126,7 +128,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                           ledgersInMetadata, subBkActiveLedgers);
                 }
                 for (Long bkLid : subBkActiveLedgers) {
-                    if (!ledgersInMetadata.contains(bkLid)) {
+                    if (!ledgersInMetadata.contains(bkLid) && !retainedLedgerIds.contains(bkLid)) {
                         garbageCleaner.clean(bkLid);
                     }
                 }

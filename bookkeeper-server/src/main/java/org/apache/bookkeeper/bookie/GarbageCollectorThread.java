@@ -30,6 +30,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -38,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.RateLimiter;
 
 import org.apache.bookkeeper.bookie.EntryLogger.EntryLogScanner;
@@ -337,6 +339,7 @@ public class GarbageCollectorThread extends SafeRunnable {
         // Extract all of the ledger ID's that comprise all of the entry logs
         // (except for the current new one which is still being written to).
         entryLogMetaMap = extractMetaFromEntryLogs(entryLogMetaMap);
+        Set<Long> retaintedLedgerIds = getRetainedLedgerIds(entryLogMetaMap);
         ZooKeeper zk = null;
 
         try {
@@ -355,7 +358,7 @@ public class GarbageCollectorThread extends SafeRunnable {
             }
             // gc inactive/deleted ledgers
             GarbageCollector collector = new ScanAndCompareGarbageCollector(ledgerManager, ledgerStorage,
-                    selfBookieAddress, zk, checkOverreplicatedLedgers, conf.getZkLedgersRootPath());
+                    selfBookieAddress, zk, checkOverreplicatedLedgers, conf.getZkLedgersRootPath(), retaintedLedgerIds);
 
             collector.gc(garbageCleaner);
 
@@ -404,6 +407,23 @@ public class GarbageCollectorThread extends SafeRunnable {
         forceGarbageCollection.set(false);
     }
 
+
+    private Set<Long> getRetainedLedgerIds(Map<Long, EntryLogMetadata> entryLogMetaMap) {
+
+        // TODO: this will come from config
+        long ledgerRetentionPeriodInMinute = 60 * 24 * 2;// 2days
+        Set<Long> nonExpiredLedgerIds = Sets.newHashSet();
+        entryLogMetaMap.forEach((entryLogId, metadata) -> {
+            if (metadata.getLastModifiedTimeStamp() > 0) {
+                if (ledgerRetentionPeriodInMinute - TimeUnit.MILLISECONDS
+                        .toMinutes(System.currentTimeMillis() - metadata.getLastModifiedTimeStamp()) > 0) {
+                    nonExpiredLedgerIds.add(entryLogId);
+                }
+            }
+        });
+
+        return nonExpiredLedgerIds;
+    }
 
     /**
      * Garbage collect those entry loggers which are not associated with any active ledgers
@@ -576,7 +596,9 @@ public class GarbageCollectorThread extends SafeRunnable {
         boolean hasExceptionWhenScan = false;
         for (long entryLogId = scannedLogId; entryLogId < curLogId; entryLogId++) {
             // Comb the current entry log file if it has not already been extracted.
-            if (entryLogMetaMap.containsKey(entryLogId)) {
+            EntryLogMetadata entryLogMetadata = entryLogMetaMap.get(entryLogId);
+            if (entryLogMetadata != null) {
+                entryLogMetadata.setLastModifiedTimeStamp(entryLogger.getLastModified(entryLogId));
                 continue;
             }
 
@@ -591,6 +613,7 @@ public class GarbageCollectorThread extends SafeRunnable {
             try {
                 // Read through the entry log file and extract the entry log meta
                 EntryLogMetadata entryLogMeta = entryLogger.getEntryLogMetadata(entryLogId);
+                entryLogMeta.setLastModifiedTimeStamp(entryLogger.getLastModified(entryLogId));
                 entryLogMetaMap.put(entryLogId, entryLogMeta);
             } catch (IOException e) {
                 hasExceptionWhenScan = true;

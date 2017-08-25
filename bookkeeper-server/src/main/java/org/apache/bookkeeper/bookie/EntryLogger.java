@@ -973,6 +973,16 @@ public class EntryLogger {
         }
         return false;
     }
+    
+    long getLastModified(long logId) {
+        for (File d : ledgerDirsManager.getAllLedgerDirs()) {
+            File f = new File(d, Long.toHexString(logId) + ".log");
+            if (f.exists()) {
+                return f.lastModified();
+            }
+        }
+        return -1;
+    }
 
     /**
      * Returns a set with the ids of all the entry log files

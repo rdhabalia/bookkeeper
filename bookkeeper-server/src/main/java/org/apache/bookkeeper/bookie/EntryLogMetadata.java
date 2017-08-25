@@ -12,6 +12,7 @@ public class EntryLogMetadata {
     private long totalSize;
     private long remainingSize;
     private final ConcurrentLongLongHashMap ledgersMap;
+    private long lastModifiedTimeStamp = -1;
 
     public EntryLogMetadata(long logId) {
         this.entryLogId = logId;
@@ -55,6 +56,14 @@ public class EntryLogMetadata {
 
     ConcurrentLongLongHashMap getLedgersMap() {
         return ledgersMap;
+    }
+
+    public long getLastModifiedTimeStamp() {
+        return lastModifiedTimeStamp;
+    }
+
+    public void setLastModifiedTimeStamp(long lastModifiedTimeStamp) {
+        this.lastModifiedTimeStamp = lastModifiedTimeStamp;
     }
 
     public void removeLedgerIf(LongPredicate predicate) {
