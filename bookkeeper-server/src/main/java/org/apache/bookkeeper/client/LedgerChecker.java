@@ -21,7 +21,11 @@ package org.apache.bookkeeper.client;
 
 import io.netty.buffer.ByteBuf;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.Random;
+import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -85,8 +89,6 @@ public class LedgerChecker {
 
     private void verifyLedgerFragment(LedgerFragment fragment,
             GenericCallback<LedgerFragment> cb, Long percentageOfLedgerFragmentToBeVerified) throws InvalidFragmentException {
-
-
         long firstStored = fragment.getFirstStoredEntryId();
         long lastStored = fragment.getLastStoredEntryId();
 
@@ -98,8 +100,6 @@ public class LedgerChecker {
             return;
         }
 
-
-
         if (firstStored == lastStored) {
             ReadManyEntriesCallback manycb = new ReadManyEntriesCallback(1,
                     fragment, cb);
@@ -110,7 +110,7 @@ public class LedgerChecker {
 
             int numberOfEntriesToBeVerified = (int) (lengthOfLedgerFragment * (percentageOfLedgerFragmentToBeVerified / 100.0));
 
-            Set<Long> entriesToBeVerified = new HashSet();
+            Set<Long> entriesToBeVerified = new HashSet<>();
 
             if (numberOfEntriesToBeVerified != lengthOfLedgerFragment) {
                 // Evenly pick random entries over the length of the fragment
@@ -121,12 +121,8 @@ public class LedgerChecker {
                         entriesToBeVerified.add(rand.nextInt((lengthOfBucket)) + index);
                     }
                 }
-                if(!entriesToBeVerified.contains(firstStored)) {
-                    entriesToBeVerified.add(firstStored);
-                }
-                if(!entriesToBeVerified.contains(lastStored)) {
-                    entriesToBeVerified.add(lastStored);
-                }
+                entriesToBeVerified.add(firstStored);
+                entriesToBeVerified.add(lastStored);
 
             } else {
                 // Verify the entire fragment
@@ -215,7 +211,7 @@ public class LedgerChecker {
 
     public void checkLedger(final LedgerHandle lh,
                             final GenericCallback<Set<LedgerFragment>> cb) {
-        checkLedger(lh, cb, (long) 0);
+        checkLedger(lh, cb, 0L);
     }
 
     public void checkLedger(final LedgerHandle lh,

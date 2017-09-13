@@ -21,6 +21,7 @@
 package org.apache.bookkeeper.client;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
@@ -67,8 +68,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
      * on multiple Bookie crashes
      */
     @Test(timeout=60000)
-        public void testChecker() throws Exception {
-
+    public void testChecker() throws Exception {
         LedgerHandle lh = bkc.createLedger(BookKeeper.DigestType.CRC32,
                 TEST_LEDGER_PASSWORD);
         startNewBookie();
@@ -91,9 +91,14 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
         for (LedgerFragment r : result) {
             LOG.info("unreplicated fragment: {}", r);
         }
-        assertEquals("Should have one missing fragment", 1, result.size());
-        assertEquals("Fragment should be missing from first replica", result
-                .iterator().next().getAddress(), replicaToKill);
+        assertEquals("Should have six missing fragments", 6, result.size());
+
+        Set<BookieSocketAddress> bookies = new HashSet<>();
+
+        for(LedgerFragment lf : result) {
+            bookies.add(lf.getAddress());
+        }
+        assertTrue(bookies.contains(replicaToKill));
 
         BookieSocketAddress replicaToKill2 = lh.getLedgerMetadata()
                 .getEnsembles().get(0L).get(1);
@@ -451,7 +456,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
             throws InterruptedException {
         LedgerChecker checker = new LedgerChecker(bkc);
         CheckerCallback cb = new CheckerCallback();
-        checker.checkLedger(lh, cb, (long) 100.0);
+        checker.checkLedger(lh, cb, 100L);
         Set<LedgerFragment> result = cb.waitAndGetResult();
         return result;
     }
