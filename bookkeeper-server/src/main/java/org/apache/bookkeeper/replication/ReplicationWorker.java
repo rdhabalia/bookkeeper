@@ -219,7 +219,7 @@ public class ReplicationWorker implements Runnable {
                         + " Enough Bookies might not have available" + "So, no harm to continue");
                 return false;
             }
-            Set<LedgerFragment> fragments = getUnderreplicatedFragments(lh);
+            Set<LedgerFragment> fragments = getUnderreplicatedFragments(lh, conf.getAuditorLedgerVerificationPercentage());
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Founds fragments {} for replication from ledger: {}", fragments, ledgerIdToReplicate);
             }
@@ -247,7 +247,7 @@ public class ReplicationWorker implements Runnable {
                 return false;
             }
 
-            fragments = getUnderreplicatedFragments(lh);
+            fragments = getUnderreplicatedFragments(lh, conf.getAuditorLedgerVerificationPercentage());
             if (fragments.size() == 0) {
                 LOG.info("Ledger replicated successfully. ledger id is: " + ledgerIdToReplicate);
                 underreplicationManager.markLedgerReplicated(ledgerIdToReplicate);
@@ -312,10 +312,10 @@ public class ReplicationWorker implements Runnable {
     }
 
     /** Gets the under replicated fragments */
-    private Set<LedgerFragment> getUnderreplicatedFragments(LedgerHandle lh)
+    private Set<LedgerFragment> getUnderreplicatedFragments(LedgerHandle lh, Long ledgerVerificationPercentage)
             throws InterruptedException {
         CheckerCallback checkerCb = new CheckerCallback();
-        ledgerChecker.checkLedger(lh, checkerCb);
+        ledgerChecker.checkLedger(lh, checkerCb, ledgerVerificationPercentage);
         Set<LedgerFragment> fragments = checkerCb.waitAndGetResult();
         return fragments;
     }
@@ -337,7 +337,7 @@ public class ReplicationWorker implements Runnable {
                         lh = admin.openLedger(ledgerId);
                     }
 
-                    Set<LedgerFragment> fragments = getUnderreplicatedFragments(lh);
+                    Set<LedgerFragment> fragments = getUnderreplicatedFragments(lh, conf.getAuditorLedgerVerificationPercentage());
                     for (LedgerFragment fragment : fragments) {
                         if (!fragment.isClosed()) {
                             lh = admin.openLedger(ledgerId);

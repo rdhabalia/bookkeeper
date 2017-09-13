@@ -96,6 +96,8 @@ public class ServerConfiguration extends AbstractConfiguration {
     protected final static String DISK_CHECK_INTERVAL = "diskCheckInterval";
     protected final static String AUDITOR_PERIODIC_CHECK_INTERVAL = "auditorPeriodicCheckInterval";
     protected final static String AUDITOR_PERIODIC_BOOKIE_CHECK_INTERVAL = "auditorPeriodicBookieCheckInterval";
+    protected final static String AUDITOR_LEDGER_VERIFICATION_PERCENTAGE = "auditorLedgerVerificationPercentage";
+
     protected final static String AUTO_RECOVERY_DAEMON_ENABLED = "autoRecoveryDaemonEnabled";
 
     // Worker Thread parameters.
@@ -1341,6 +1343,24 @@ public class ServerConfiguration extends AbstractConfiguration {
      */
     public long getAuditorPeriodicBookieCheckInterval() {
         return getLong(AUDITOR_PERIODIC_BOOKIE_CHECK_INTERVAL, 86400);
+    }
+
+    /**
+     * Set what percentage of a ledger (fragment)'s entries will be verified
+     *
+     * @param auditorLedgerVerificationPercentage The verification proportion as a percentage
+     */
+    public void setAuditorLedgerVerificationPercentage(long auditorLedgerVerificationPercentage) {
+        setProperty(AUDITOR_LEDGER_VERIFICATION_PERCENTAGE, auditorLedgerVerificationPercentage);
+    }
+
+    /**
+     * Get what percentage of a ledger (fragment)'s entries will be verified
+     * @see #setAuditorLedgerVerificationPercentage(long)
+     * @return percentage of a ledger (fragment)'s entries will be verifie. Default is 100%
+     */
+    public long getAuditorLedgerVerificationPercentage() {
+        return getLong(AUDITOR_LEDGER_VERIFICATION_PERCENTAGE, 100);
     }
 
     /**

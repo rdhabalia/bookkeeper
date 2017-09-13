@@ -443,7 +443,7 @@ public class Auditor implements BookiesListener {
                     LedgerHandle lh = null;
                     try {
                         lh = admin.openLedgerNoRecovery(ledgerId);
-                        checker.checkLedger(lh, new ProcessLostFragmentsCb(lh, callback));
+                        checker.checkLedger(lh, new ProcessLostFragmentsCb(lh, callback), conf.getAuditorLedgerVerificationPercentage());
                     } catch (BKException.BKNoSuchLedgerExistsException bknsle) {
                         LOG.debug("Ledger was deleted before we could check it", bknsle);
                         callback.processResult(BKException.Code.OK,

@@ -67,7 +67,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
      * on multiple Bookie crashes
      */
     @Test(timeout=60000)
-    public void testChecker() throws Exception {
+        public void testChecker() throws Exception {
 
         LedgerHandle lh = bkc.createLedger(BookKeeper.DigestType.CRC32,
                 TEST_LEDGER_PASSWORD);
@@ -84,6 +84,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
         for (int i = 0; i < 10; i++) {
             lh.addEntry(TEST_LEDGER_ENTRY_DATA);
         }
+
 
         Set<LedgerFragment> result = getUnderReplicatedFragments(lh);
         assertNotNull("Result shouldn't be null", result);
@@ -104,7 +105,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
         for (LedgerFragment r : result) {
             LOG.info("unreplicated fragment: {}", r);
         }
-        assertEquals("Should have three missing fragments", 3, result.size());
+        assertEquals("Should have six missing fragments", 6, result.size());
     }
 
     /**
@@ -450,7 +451,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
             throws InterruptedException {
         LedgerChecker checker = new LedgerChecker(bkc);
         CheckerCallback cb = new CheckerCallback();
-        checker.checkLedger(lh, cb);
+        checker.checkLedger(lh, cb, (long) 100.0);
         Set<LedgerFragment> result = cb.waitAndGetResult();
         return result;
     }
