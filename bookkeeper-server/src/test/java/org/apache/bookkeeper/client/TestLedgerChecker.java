@@ -21,7 +21,6 @@
 package org.apache.bookkeeper.client;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
@@ -69,6 +68,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
      */
     @Test(timeout=60000)
     public void testChecker() throws Exception {
+
         LedgerHandle lh = bkc.createLedger(BookKeeper.DigestType.CRC32,
                 TEST_LEDGER_PASSWORD);
         startNewBookie();
@@ -85,20 +85,14 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
             lh.addEntry(TEST_LEDGER_ENTRY_DATA);
         }
 
-
         Set<LedgerFragment> result = getUnderReplicatedFragments(lh);
         assertNotNull("Result shouldn't be null", result);
         for (LedgerFragment r : result) {
             LOG.info("unreplicated fragment: {}", r);
         }
-        assertEquals("Should have six missing fragments", 6, result.size());
-
-        Set<BookieSocketAddress> bookies = new HashSet<>();
-
-        for(LedgerFragment lf : result) {
-            bookies.add(lf.getAddress());
-        }
-        assertTrue(bookies.contains(replicaToKill));
+        assertEquals("Should have one missing fragment", 1, result.size());
+        assertEquals("Fragment should be missing from first replica", result
+                .iterator().next().getAddress(), replicaToKill);
 
         BookieSocketAddress replicaToKill2 = lh.getLedgerMetadata()
                 .getEnsembles().get(0L).get(1);
@@ -110,7 +104,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
         for (LedgerFragment r : result) {
             LOG.info("unreplicated fragment: {}", r);
         }
-        assertEquals("Should have six missing fragments", 6, result.size());
+        assertEquals("Should have three missing fragments", 3, result.size());
     }
 
     /**
@@ -456,7 +450,7 @@ public class TestLedgerChecker extends BookKeeperClusterTestCase {
             throws InterruptedException {
         LedgerChecker checker = new LedgerChecker(bkc);
         CheckerCallback cb = new CheckerCallback();
-        checker.checkLedger(lh, cb, 100L);
+        checker.checkLedger(lh, cb);
         Set<LedgerFragment> result = cb.waitAndGetResult();
         return result;
     }

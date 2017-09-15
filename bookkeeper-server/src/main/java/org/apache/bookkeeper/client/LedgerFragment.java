@@ -129,6 +129,10 @@ public class LedgerFragment {
         return LedgerHandle.INVALID_ENTRY_ID;
     }
 
+    public boolean isStoredEntryId(long entryId) {
+        return schedule.hasEntry(entryId, bookieIndex);
+    }
+
     /**
      * Gets the ensemble of fragment
      * 
