@@ -126,10 +126,17 @@ class BookieNettyServer {
         synchronized (suspensionLock) {
             suspended = true;
             for (Channel channel : allChannels) {
-                if(channel.isOpen()) {
-                    channel.close();
-                }
-                channel.config().setAutoRead(false);
+                // To suspend processing in the bookie, submit a task
+                // that keeps the event loop busy until resume is
+                // explicitely invoked
+                channel.eventLoop().submit(() -> {
+                    while (suspended && isRunning()) {
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                        }
+                    }
+                });
             }
         }
     }
