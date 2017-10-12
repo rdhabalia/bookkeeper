@@ -303,6 +303,11 @@ public class BookieServer {
         }
     }
 
+    @VisibleForTesting
+    public AutoRecoveryMain getAutoRecoveryMain() {
+        return autoRecoveryMain;
+    }
+
     protected Bookie newBookie(ServerConfiguration conf)
         throws IOException, KeeperException, InterruptedException, BookieException {
         return new Bookie(conf, statsLogger.scope(BOOKIE_SCOPE));
@@ -601,5 +606,17 @@ public class BookieServer {
             LOG.error("Exception running bookie server : ", e);
             System.exit(ExitCode.SERVER_EXCEPTION);
         }
+    }
+
+    @Override
+    public  String toString() {
+        String id = "UNKNOWN";
+
+        try {
+            id = Bookie.getBookieAddress(conf).toString();
+        } catch (UnknownHostException e) {
+            //Ignored...
+        }
+        return "Bookie Server listening on " + id;
     }
 }

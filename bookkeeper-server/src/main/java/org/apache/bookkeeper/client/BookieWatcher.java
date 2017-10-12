@@ -129,6 +129,21 @@ class BookieWatcher implements Watcher, ChildrenCallback {
         readOnlyBookieWatcher.notifyBookiesChanged(listener);
     }
 
+    public Collection<BookieSocketAddress> getROBookies() throws BKException {
+        try {
+            String znode = this.bookieRegistrationPath + "/" + BookKeeperConstants.READONLY;
+            List<String> children = bk.getZkHandle().getChildren(znode, false);
+            return convertToBookieAddresses(children);
+        } catch (KeeperException ke) {
+            logger.error("Failed to get read only bookie list : ", ke);
+            throw new BKException.ZKException();
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            logger.error("Interrupted reading read only bookie list", ie);
+            throw new BKException.BKInterruptedException();
+        }
+    }
+
     public Collection<BookieSocketAddress> getBookies() throws BKException {
         try {
             List<String> children = bk.getZkHandle().getChildren(this.bookieRegistrationPath, false);

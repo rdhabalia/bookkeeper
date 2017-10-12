@@ -192,6 +192,11 @@ public class BookKeeperAdmin {
         return bkc.bookieWatcher.getBookies();
     }
 
+
+    public Collection<BookieSocketAddress> getROBookies() throws BKException {
+        return bkc.bookieWatcher.getROBookies();
+    }
+
     /**
      * Get a list of readonly bookies
      *
