@@ -192,18 +192,23 @@ public class BookKeeperAdmin {
         return bkc.bookieWatcher.getBookies();
     }
 
-
-    public Collection<BookieSocketAddress> getROBookies() throws BKException {
-        return bkc.bookieWatcher.getROBookies();
+    /**
+     * Get a list of readonly bookies (synchronous).
+     *
+     * @return a collection of bookie addresses
+     * @throws BKException on any error trying to read the bookies
+     */
+    public Collection<BookieSocketAddress> getReadOnlyBookiesSync() throws BKException {
+        return bkc.bookieWatcher.getReadOnlyBookiesSync();
     }
 
     /**
-     * Get a list of readonly bookies
+     * Get a list of readonly bookies (asynchronous).
      *
      * @return a collection of bookie addresses
      */
-    public Collection<BookieSocketAddress> getReadOnlyBookies() {
-        return bkc.bookieWatcher.getReadOnlyBookies();
+    public Collection<BookieSocketAddress> getReadOnlyBookiesAsync() {
+        return bkc.bookieWatcher.getReadOnlyBookiesAsync();
     }
 
     /**

@@ -277,7 +277,7 @@ public class Auditor implements BookiesListener {
     private List<String> getAvailableBookies() throws BKException {
         // Get the available bookies
         Collection<BookieSocketAddress> availableBkAddresses = admin.getAvailableBookies();
-        Collection<BookieSocketAddress> readOnlyBkAddresses = admin.getROBookies();
+        Collection<BookieSocketAddress> readOnlyBkAddresses = admin.getReadOnlyBookiesSync();
         availableBkAddresses.addAll(readOnlyBkAddresses);
 
         List<String> availableBookies = new ArrayList<String>();

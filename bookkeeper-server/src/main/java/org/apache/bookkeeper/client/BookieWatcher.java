@@ -129,7 +129,7 @@ class BookieWatcher implements Watcher, ChildrenCallback {
         readOnlyBookieWatcher.notifyBookiesChanged(listener);
     }
 
-    public Collection<BookieSocketAddress> getROBookies() throws BKException {
+    public Collection<BookieSocketAddress> getReadOnlyBookiesSync() throws BKException {
         try {
             String znode = this.bookieRegistrationPath + "/" + BookKeeperConstants.READONLY;
             List<String> children = bk.getZkHandle().getChildren(znode, false);
@@ -159,7 +159,7 @@ class BookieWatcher implements Watcher, ChildrenCallback {
         }
     }
 
-    Collection<BookieSocketAddress> getReadOnlyBookies() {
+    Collection<BookieSocketAddress> getReadOnlyBookiesAsync() {
         return new HashSet<BookieSocketAddress>(readOnlyBookieWatcher.getReadOnlyBookies());
     }
 
