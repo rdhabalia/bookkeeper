@@ -217,6 +217,7 @@ public class LedgerMetadataIndex implements Closeable {
         }
 
         ledgersDb.sync();
+        key.recycle();
     }
 
     public void removeDeletedLedgers() throws IOException {
@@ -227,13 +228,15 @@ public class LedgerMetadataIndex implements Closeable {
             long ledgerId = pendingDeletedLedgers.poll();
             key.set(ledgerId);
             ledgersDb.delete(key.array);
+            deletedLedgers++;
         }
 
         if (log.isDebugEnabled()) {
-            log.debug("Persisting deletes of ledgers", deletedLedgers);
+            log.debug("Persisting deletes of ledgers {}", deletedLedgers);
         }
 
         ledgersDb.sync();
+        key.recycle();
     }
 
     private static final Logger log = LoggerFactory.getLogger(LedgerMetadataIndex.class);
