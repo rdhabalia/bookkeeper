@@ -19,7 +19,7 @@ import static com.google.common.base.Charsets.UTF_8;
 * limitations under the License.
 */
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufProcessor;
+import io.netty.util.ByteProcessor;
 import io.netty.util.Recycler;
 import io.netty.util.Recycler.Handle;
 
@@ -65,11 +65,11 @@ public class MacDigestManager extends DigestManager {
         return RECYCLER.get();
     }
 
-    private class MACDigest implements Digest, ByteBufProcessor {
-        private final Handle recyclerHandle;
+    private class MACDigest implements Digest, ByteProcessor {
+        private final Handle<MACDigest> recyclerHandle;
         private final Mac mac;
 
-        public MACDigest(Handle recyclerHandle) throws GeneralSecurityException {
+        private MACDigest(Handle<MACDigest> recyclerHandle) throws GeneralSecurityException {
             this.recyclerHandle = recyclerHandle;
             byte[] macKey = genDigest("mac", passwd);
             SecretKeySpec keySpec = new SecretKeySpec(macKey, KEY_ALGORITHM);
@@ -101,12 +101,12 @@ public class MacDigestManager extends DigestManager {
         @Override
         public void recycle() {
             mac.reset();
-            RECYCLER.recycle(this, recyclerHandle);
+            recyclerHandle.recycle(this);
         }
     }
 
     private final Recycler<MACDigest> RECYCLER = new Recycler<MACDigest>() {
-        protected MACDigest newObject(Recycler.Handle handle) {
+        protected MACDigest newObject(Recycler.Handle<MACDigest> handle) {
             try {
                 return new MACDigest(handle);
             } catch (GeneralSecurityException gse) {

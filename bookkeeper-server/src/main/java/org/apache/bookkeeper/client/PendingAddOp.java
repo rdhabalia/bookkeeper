@@ -69,6 +69,25 @@ class PendingAddOp extends SafeRunnable implements WriteCallback, IntProcedure {
     long currentLedgerLength;
     int pendingWriteRequests;
     boolean callbackTriggered;
+    
+    private void reset() {
+        payload = null;
+        toSend = null;
+        cb = null;
+        ctx = null;
+        entryId = -1L;
+        entryLength = 0;
+        ackSet.recycle();
+        ackSet = null;
+        completed = false;
+        lh = null;
+        isRecoveryAdd = false;
+        requestTimeNanos = -1L;
+        addOpLogger = null;
+        currentLedgerLength = -1L;
+        pendingWriteRequests = 0;
+        callbackTriggered = false;
+    }
 
     static PendingAddOp create(LedgerHandle lh, ByteBuf payload, AddCallback cb, Object ctx) {
         PendingAddOp op = RECYCLER.get();
@@ -270,30 +289,19 @@ class PendingAddOp extends SafeRunnable implements WriteCallback, IntProcedure {
         return sb.toString();
     }
 
-    private final Handle recyclerHandle;
+    private final Handle<PendingAddOp> recyclerHandle;
     private static final Recycler<PendingAddOp> RECYCLER = new Recycler<PendingAddOp>() {
-        protected PendingAddOp newObject(Recycler.Handle handle) {
+        protected PendingAddOp newObject(Recycler.Handle<PendingAddOp> handle) {
             return new PendingAddOp(handle);
         }
     };
 
-    private PendingAddOp(Handle recyclerHandle) {
+    private PendingAddOp(Handle<PendingAddOp> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;
     }
 
     private void recycle() {
-        payload = null;
-        toSend = null;
-        cb = null;
-        ctx = null;
-        ackSet.recycle();
-        ackSet = null;
-        lh = null;
-        isRecoveryAdd = false;
-        addOpLogger = null;
-        completed = false;
-        pendingWriteRequests = 0;
-        callbackTriggered = false;
-        RECYCLER.recycle(this, recyclerHandle);
+        reset();
+        recyclerHandle.recycle(this);
     }
 }
