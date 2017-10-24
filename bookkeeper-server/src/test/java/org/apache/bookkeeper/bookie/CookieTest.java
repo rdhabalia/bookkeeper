@@ -59,7 +59,7 @@ public class CookieTest extends BookKeeperClusterTestCase {
     }
 
     private String newDirectory(boolean createCurDir) throws IOException {
-        File d = IOUtils.createTempDir("cookie", "tmpdir");
+        File d = IOUtils.createTempDir("CookieTest_", "tmpdir");
         if (createCurDir) {
             new File(d, "current").mkdirs();
         }
@@ -404,11 +404,23 @@ public class CookieTest extends BookKeeperClusterTestCase {
         b.start();
         b.shutdown();
 
+        // make sure the cookie is in fact using the hostname from the conf.
+        // this can fail if DNS lookup is not working as expected.  
+        Cookie.Builder builder = Cookie.generateCookie(conf);
+        Cookie cookie = builder.build();
+        Assert.assertFalse("Cookie is not using hostname!", cookie.isBookieHostCreatedFromIp());
+        
+        // tell the second bookie not to use hostnames. 
         conf.setUseHostNameAsBookieID(false);
+
+        // the second bookie should use the conf from the first bookie's cookie,
+        // regardless of what we told it
         b = new Bookie(conf);
         b.start();
-        assertTrue("Fails to recognize bookie which was started with HostName as ID", conf.getUseHostNameAsBookieID());
         b.shutdown();
+
+        // make sure the conf shows we used hostname
+        assertTrue("Fails to recognize bookie which was started with HostName as ID", conf.getUseHostNameAsBookieID());
     }
 
     /**
