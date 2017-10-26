@@ -187,6 +187,15 @@ public interface BookieProtocol {
         long entryId;
         short flags;
         byte[] masterKey;
+        
+        private void reset() {
+            protocolVersion = 0;
+            opCode = 0;
+            ledgerId = -1L;
+            entryId = -1L;
+            flags = 0;
+            masterKey = null;
+        }
 
         protected void init(byte protocolVersion, byte opCode, long ledgerId,
                           long entryId, short flags, byte[] masterKey) {
@@ -235,6 +244,11 @@ public interface BookieProtocol {
 
     static class AddRequest extends Request {
         ByteBuf data;
+        
+        private void reset() {
+            super.reset();
+            data = null;
+        }
 
         static AddRequest create(byte protocolVersion, long ledgerId, long entryId, short flags, byte[] masterKey,
                 ByteBuf data) {
@@ -261,23 +275,20 @@ public interface BookieProtocol {
             data.release();
         }
 
-        private final Handle recyclerHandle;
-        private AddRequest(Handle recyclerHandle) {
+        private final Handle<AddRequest> recyclerHandle;
+        private AddRequest(Handle<AddRequest> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
         private static final Recycler<AddRequest> RECYCLER = new Recycler<AddRequest>() {
-            protected AddRequest newObject(Handle handle) {
+            protected AddRequest newObject(Handle<AddRequest> handle) {
                 return new AddRequest(handle);
             }
         };
 
         public void recycle() {
-            ledgerId = -1;
-            entryId = -1;
-            masterKey = null;
-            data = null;
-            RECYCLER.recycle(this, recyclerHandle);
+            reset();
+            recyclerHandle.recycle(this);
         }
     }
 
@@ -311,6 +322,14 @@ public interface BookieProtocol {
         int errorCode;
         long ledgerId;
         long entryId;
+        
+        private void reset() {
+            protocolVersion = 0;
+            opCode = 0;
+            errorCode = -1;
+            ledgerId = -1L;
+            entryId = -1L;
+        }
 
         protected void init(byte protocolVersion, byte opCode,
                            int errorCode, long ledgerId, long entryId) {
@@ -395,19 +414,20 @@ public interface BookieProtocol {
             return response;
         }
 
-        private final Handle recyclerHandle;
-        private AddResponse(Handle recyclerHandle) {
+        private final Handle<AddResponse> recyclerHandle;
+        private AddResponse(Handle<AddResponse> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
         private static final Recycler<AddResponse> RECYCLER = new Recycler<AddResponse>() {
-            protected AddResponse newObject(Handle handle) {
+            protected AddResponse newObject(Handle<AddResponse> handle) {
                 return new AddResponse(handle);
             }
         };
 
         public void recycle() {
-            RECYCLER.recycle(this, recyclerHandle);
+            super.reset();
+            recyclerHandle.recycle(this);
         }
     }
 

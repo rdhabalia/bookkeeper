@@ -150,18 +150,18 @@ class ReadEntryProcessor extends PacketProcessorBase {
 
     private void recycle() {
         super.reset();
-        RECYCLER.recycle(this, recyclerHandle);
+        this.recyclerHandle.recycle(this);
     }
 
-    private final Handle recyclerHandle;
+    private final Recycler.Handle<ReadEntryProcessor> recyclerHandle;
 
-    private ReadEntryProcessor(Handle recyclerHandle) {
+    private ReadEntryProcessor(Recycler.Handle<ReadEntryProcessor> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;
     }
 
     private static final Recycler<ReadEntryProcessor> RECYCLER = new Recycler<ReadEntryProcessor>() {
         @Override
-        protected ReadEntryProcessor newObject(Handle handle) {
+        protected ReadEntryProcessor newObject(Recycler.Handle<ReadEntryProcessor> handle) {
             return new ReadEntryProcessor(handle);
         }
     };

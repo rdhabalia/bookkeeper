@@ -41,6 +41,11 @@ class WriteEntryProcessor extends PacketProcessorBase implements WriteCallback {
     private final static Logger LOG = LoggerFactory.getLogger(WriteEntryProcessor.class);
 
     long startTimeNanos;
+    
+    protected void reset() {
+        super.reset();
+        startTimeNanos = -1L;
+    }
 
     public static WriteEntryProcessor create(Request request, Channel channel,
             BookieRequestProcessor requestProcessor) {
@@ -120,19 +125,19 @@ class WriteEntryProcessor extends PacketProcessorBase implements WriteCallback {
     }
 
     private void recycle() {
-        super.reset();
-        RECYCLER.recycle(this, recyclerHandle);
+        reset();
+        recyclerHandle.recycle(this);
     }
 
-    private final Handle recyclerHandle;
+    private final Recycler.Handle<WriteEntryProcessor> recyclerHandle;
 
-    private WriteEntryProcessor(Handle recyclerHandle) {
+    private WriteEntryProcessor(Recycler.Handle<WriteEntryProcessor> recyclerHandle) {
         this.recyclerHandle = recyclerHandle;
     }
 
     private static final Recycler<WriteEntryProcessor> RECYCLER = new Recycler<WriteEntryProcessor>() {
         @Override
-        protected WriteEntryProcessor newObject(Handle handle) {
+        protected WriteEntryProcessor newObject(Recycler.Handle<WriteEntryProcessor> handle) {
             return new WriteEntryProcessor(handle);
         }
     };

@@ -72,10 +72,10 @@ class CRC32DigestManager extends DigestManager {
     }
 
     private static class StandardCRC32Digest implements Digest {
-        private final Handle recyclerHandle;
-        private final CRC32 crc;
-
-        public StandardCRC32Digest(Handle recyclerHandle) {
+        private final Recycler.Handle<StandardCRC32Digest> recyclerHandle;
+        private CRC32 crc;
+        
+        private StandardCRC32Digest(Handle<StandardCRC32Digest> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
             this.crc = new CRC32();
         }
@@ -98,21 +98,21 @@ class CRC32DigestManager extends DigestManager {
         @Override
         public void recycle() {
             crc.reset();
-            RECYCLER.recycle(this, recyclerHandle);
+            recyclerHandle.recycle(this);
         }
 
         private static final Recycler<StandardCRC32Digest> RECYCLER = new Recycler<StandardCRC32Digest>() {
-            protected StandardCRC32Digest newObject(Recycler.Handle handle) {
+            protected StandardCRC32Digest newObject(Recycler.Handle<StandardCRC32Digest> handle) {
                 return new StandardCRC32Digest(handle);
             }
         };
     }
 
     private static class DirectCRC32Digest implements Digest {
-        private final Handle recyclerHandle;
+        private final Recycler.Handle<DirectCRC32Digest> recyclerHandle;
         private int crcValue;
 
-        public DirectCRC32Digest(Handle recyclerHandle) {
+        private DirectCRC32Digest(Handle<DirectCRC32Digest> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
             this.crcValue = 0;
         }
@@ -148,11 +148,11 @@ class CRC32DigestManager extends DigestManager {
         @Override
         public void recycle() {
             crcValue = 0;
-            RECYCLER.recycle(this, recyclerHandle);
+            recyclerHandle.recycle(this);
         }
 
         private static final Recycler<DirectCRC32Digest> RECYCLER = new Recycler<DirectCRC32Digest>() {
-            protected DirectCRC32Digest newObject(Recycler.Handle handle) {
+            protected DirectCRC32Digest newObject(Recycler.Handle<DirectCRC32Digest> handle) {
                 return new DirectCRC32Digest(handle);
             }
         };

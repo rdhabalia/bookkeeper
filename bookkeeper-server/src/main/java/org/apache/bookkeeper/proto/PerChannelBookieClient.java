@@ -881,6 +881,16 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         long entryId;
         CompletionValue completionValue;
         BookieProtocol.Response response;
+        
+        private void reset() {
+            pcbc = null;
+            operationType = null;
+            status = null;
+            ledgerId = -1L;
+            entryId = -1L;
+            completionValue = null;
+            response = null;
+        }
 
         static ReadV2ResponseCallback create(PerChannelBookieClient pcbc, StatusCode status,
                 OperationType operationType, long ledgerId, long entryId, CompletionValue completionValue,
@@ -920,25 +930,19 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         }
 
         void recycle() {
-            pcbc = null;
-            status = null;
-            operationType = null;
-            ledgerId = -1;
-            entryId = -1;
-            completionValue = null;
-            response = null;
-            RECYCLER.recycle(this, recyclerHandle);
+            reset();
+            recyclerHandle.recycle(this);
         }
 
-        private final Handle recyclerHandle;
+        private final Handle<ReadV2ResponseCallback> recyclerHandle;
 
-        private ReadV2ResponseCallback(Handle recyclerHandle) {
+        private ReadV2ResponseCallback(Handle<ReadV2ResponseCallback> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
         private static final Recycler<ReadV2ResponseCallback> RECYCLER = new Recycler<ReadV2ResponseCallback>() {
             @Override
-            protected ReadV2ResponseCallback newObject(Handle handle) {
+            protected ReadV2ResponseCallback newObject(Handle<ReadV2ResponseCallback> handle) {
                 return new ReadV2ResponseCallback(handle);
             }
         };
@@ -1055,11 +1059,18 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
 
     // visible for testing
     static abstract class CompletionValue {
-        final Object ctx;
+        Object ctx;
         protected long ledgerId;
         protected long entryId;
         protected long startTime;
 
+        private void reset() {
+            this.ctx = null;
+            this.ledgerId = -1;
+            this.entryId = -1;
+            this.startTime = -1L;
+        }
+        
         public CompletionValue() {
             this.ctx = null;
             this.ledgerId = -1;
@@ -1129,6 +1140,19 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         WriteCallback originalCallback;
         Object originalCtx;
         CompletionKey completionKey;
+        
+        private void reset() {
+            super.reset();
+            cb = null;
+            pcbc = null;
+            originalCallback = null;
+            originalCtx = null;
+
+            if (completionKey != null) {
+                completionKey.recycle();
+                completionKey = null;
+            }
+        }
 
         public static AddCompletion get(PerChannelBookieClient pcbc, WriteCallback originalCallback, Object originalCtx,
  long ledgerId, long entryId, CompletionKey completionKey) {
@@ -1161,30 +1185,21 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
             originalCallback.writeComplete(rc, ledgerId, entryId, addr, originalCtx);
         }
 
-        private final Handle recyclerHandle;
+        private final Handle<AddCompletion> recyclerHandle;
 
-        private AddCompletion(Handle handle) {
+        private AddCompletion(Handle<AddCompletion> handle) {
             this.recyclerHandle = handle;
         }
 
         private static final Recycler<AddCompletion> RECYCLER = new Recycler<AddCompletion>() {
-            protected AddCompletion newObject(Recycler.Handle handle) {
+            protected AddCompletion newObject(Recycler.Handle<AddCompletion> handle) {
                 return new AddCompletion(handle);
             }
         };
 
         public void recycle() {
-            cb = null;
-            pcbc = null;
-            startTime = 0;
-            originalCallback = null;
-            originalCtx = null;
-
-            if (completionKey != null) {
-                completionKey.recycle();
-                completionKey = null;
-            }
-            RECYCLER.recycle(this, recyclerHandle);
+            reset();
+            recyclerHandle.recycle(this);
         }
     }
 
@@ -1199,6 +1214,13 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         OperationType operationType;
         long requestAt;
 
+        private void reset() {
+            pcbc = null;
+            txnId = -1L;
+            operationType = null;
+            requestAt = -1L;
+        }
+        
         CompletionKey(PerChannelBookieClient pcbc, long txnId, OperationType operationType) {
             this.pcbc = pcbc;
             this.txnId = txnId;
@@ -1232,6 +1254,12 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
     static class V2CompletionKey extends CompletionKey {
         long ledgerId;
         long entryId;
+        
+        private void reset() {
+            super.reset();
+            ledgerId = -1L;
+            entryId = -1L;
+        }
 
         static V2CompletionKey get(PerChannelBookieClient pcbc, long ledgerId, long entryId, OperationType operationType) {
             V2CompletionKey key = RECYCLER.get();
@@ -1264,27 +1292,23 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
             return String.format("%d:%d %s", ledgerId, entryId, operationType);
         }
 
-        private final Handle recyclerHandle;
+        private final Handle<V2CompletionKey> recyclerHandle;
 
-        private V2CompletionKey(Handle handle) {
+        private V2CompletionKey(Handle<V2CompletionKey> handle) {
             super(null, -1, null);
             this.recyclerHandle = handle;
         }
 
         private static final Recycler<V2CompletionKey> RECYCLER = new Recycler<V2CompletionKey>() {
-            protected V2CompletionKey newObject(Recycler.Handle handle) {
+            protected V2CompletionKey newObject(Recycler.Handle<V2CompletionKey> handle) {
                 return new V2CompletionKey(handle);
             }
         };
 
         @Override
         public void recycle() {
-            pcbc = null;
-            txnId = -1;
-            requestAt = -1;
-            ledgerId = -1;
-            entryId = -1;
-            RECYCLER.recycle(this, recyclerHandle);
+            reset();
+            recyclerHandle.recycle(this);
         }
     }
 

@@ -7,6 +7,10 @@ class LongWrapper {
 
     final byte[] array = new byte[8];
 
+    private void reset() {
+        this.set(-1L);
+    }
+    
     public void set(long value) {
         ArrayUtil.setLong(array, 0, value);
     }
@@ -26,19 +30,20 @@ class LongWrapper {
     }
 
     public void recycle() {
-        RECYCLER.recycle(this, handle);
+        this.reset();
+        handle.recycle(this);
     }
 
     private static Recycler<LongWrapper> RECYCLER = new Recycler<LongWrapper>() {
         @Override
-        protected LongWrapper newObject(Handle handle) {
+        protected LongWrapper newObject(Handle<LongWrapper> handle) {
             return new LongWrapper(handle);
         }
     };
 
-    private final Handle handle;
+    private final Handle<LongWrapper> handle;
 
-    private LongWrapper(Handle handle) {
+    private LongWrapper(Handle<LongWrapper> handle) {
         this.handle = handle;
     }
 }

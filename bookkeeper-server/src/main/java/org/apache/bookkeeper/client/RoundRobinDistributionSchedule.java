@@ -66,15 +66,20 @@ class RoundRobinDistributionSchedule implements DistributionSchedule {
     private static class AckSetImpl implements AckSet {
         private int ackQuorumSize;
         private IntHashSet set = new IntHashSet();
+        
+        private void reset() {
+            ackQuorumSize = -1;
+            set.clear();
+        }
 
-        private final Handle recyclerHandle;
+        private final Handle<AckSetImpl> recyclerHandle;
         private static final Recycler<AckSetImpl> RECYCLER = new Recycler<AckSetImpl>() {
-            protected AckSetImpl newObject(Recycler.Handle handle) {
+            protected AckSetImpl newObject(Recycler.Handle<AckSetImpl> handle) {
                 return new AckSetImpl(handle);
             }
         };
 
-        private AckSetImpl(Handle recyclerHandle) {
+        private AckSetImpl(Handle<AckSetImpl> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
@@ -98,7 +103,8 @@ class RoundRobinDistributionSchedule implements DistributionSchedule {
 
         @Override
         public void recycle() {
-            RECYCLER.recycle(this, recyclerHandle);
+            reset();
+            recyclerHandle.recycle(this);
         }
 
         @Override
