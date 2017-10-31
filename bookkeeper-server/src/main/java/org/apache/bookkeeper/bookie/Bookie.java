@@ -1090,6 +1090,11 @@ public class Bookie extends BookieCriticalThread {
         return entry;
     }
 
+    public long readLastAddConfirmed(long ledgerId) throws IOException {
+        LedgerDescriptor handle = handles.getReadOnlyHandle(ledgerId);
+        return handle.getLastAddConfirmed();
+    }
+
     @VisibleForTesting
     public LedgerStorage getLedgerStorage() {
         return ledgerStorage;

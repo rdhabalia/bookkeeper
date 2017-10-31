@@ -34,7 +34,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class LedgerEntryPage {
     private final static int indexEntrySize = 8;
-    private final int pageSize;
     private final int entriesPerPage;
     volatile private EntryKey entryKey = new EntryKey(-1, BookieProtocol.INVALID_ENTRY_ID);
     private final ByteBuffer page;
@@ -53,7 +52,6 @@ public class LedgerEntryPage {
     }
 
     public LedgerEntryPage(int pageSize, int entriesPerPage, LEPStateChangeCallback callback) {
-        this.pageSize = pageSize;
         this.entriesPerPage = entriesPerPage;
         page = ByteBuffer.allocateDirect(pageSize);
         this.callback = callback;

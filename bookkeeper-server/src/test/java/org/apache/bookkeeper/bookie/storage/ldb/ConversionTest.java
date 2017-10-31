@@ -63,6 +63,7 @@ public class ConversionTest {
                 ByteBuf entry = Unpooled.buffer(128);
                 entry.writeLong(ledgerId);
                 entry.writeLong(entryId);
+                entry.writeLong(entryId - 1); // last add completed
                 entry.writeBytes(("entry-" + entryId).getBytes());
 
                 interleavedStorage.addEntry(entry);
@@ -102,6 +103,7 @@ public class ConversionTest {
                 ByteBuf entry = Unpooled.buffer(1024);
                 entry.writeLong(ledgerId);
                 entry.writeLong(entryId);
+                entry.writeLong(entryId - 1); // last add completed
                 entry.writeBytes(("entry-" + entryId).getBytes());
 
                 ByteBuf result = dbStorage.getEntry(ledgerId, entryId);

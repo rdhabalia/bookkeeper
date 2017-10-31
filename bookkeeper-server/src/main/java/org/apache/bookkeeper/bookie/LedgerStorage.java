@@ -106,6 +106,15 @@ public interface LedgerStorage {
      * Read an entry from storage
      */
     ByteBuf getEntry(long ledgerId, long entryId) throws IOException;
+    
+    /**
+     * Get last add confirmed.
+     *
+     * @param ledgerId ledger id.
+     * @return last add confirmed.
+     * @throws IOException
+     */
+    long getLastAddConfirmed(long ledgerId) throws IOException;
 
     /**
      * Flushes all data in the storage. Once this is called,

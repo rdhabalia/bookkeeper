@@ -79,6 +79,9 @@ class FileInfo {
     // bit map for states of the ledger.
     private int stateBits;
     private boolean needFlushHeader = false;
+    
+    // lac
+    private Long lac = null;
 
     // file access mode
     protected String mode;
@@ -88,6 +91,25 @@ class FileInfo {
 
         this.masterKey = masterKey;
         mode = "rw";
+    }
+    
+    synchronized Long getLastAddConfirmed() {
+        return lac;
+    }
+
+    long setLastAddConfirmed(long lac) {
+        long lacToReturn;
+        synchronized (this) {
+            if (null == this.lac || this.lac < lac) {
+                this.lac = lac;
+            }
+            lacToReturn = this.lac;
+        }
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("Updating LAC {} , {}", lacToReturn, lac);
+        }
+        
+        return lacToReturn;
     }
 
     public File getLf() {

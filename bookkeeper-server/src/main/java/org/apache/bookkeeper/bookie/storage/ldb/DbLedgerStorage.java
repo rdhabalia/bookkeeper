@@ -4,7 +4,10 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.SortedMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -105,6 +108,8 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
     private OpStatsLogger readAheadBatchSizeStats;
     private OpStatsLogger flushStats;
     private OpStatsLogger flushSizeStats;
+    
+    private static final Map<Long, Long> lastAddCompletedMap = new ConcurrentHashMap<>();
 
     @Override
     public void initialize(ServerConfiguration conf, GarbageCollectorThread.LedgerManagerProvider ledgerManagerProvider,
@@ -226,6 +231,21 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         } catch (IOException e) {
             log.error("Error closing db storage", e);
         }
+    }
+
+    @Override
+    public long getLastAddConfirmed(long ledgerId) throws IOException {
+        Long lac = lastAddCompletedMap.get(ledgerId);
+        if (lac == null) {
+            long lastEntryId = entryLocationIndex.getLastEntryInLedger(ledgerId);
+            if (lastEntryId == -1) {
+                return BookieProtocol.INVALID_ENTRY_ID;
+            } else {
+                lac = lastEntryId;
+                lastAddCompletedMap.put(ledgerId, lac);
+            }
+        }
+        return lac;
     }
 
     @Override
@@ -548,10 +568,12 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         // Write all the pending entries into the entry logger and collect the offset position for each entry
         try {
             Batch batch = entryLocationIndex.newBatch();
+            Map<Long, Long> flushedAddCompletionMap = new HashMap<>();
             writeCacheBeingFlushed.forEach((ledgerId, entryId, entry) -> {
                 try {
                     long location = entryLogger.addEntry(ledgerId, entry, true);
                     entryLocationIndex.addLocation(batch, ledgerId, entryId, location);
+                    flushedAddCompletionMap.put(ledgerId, entryId);  // sorted entries should guarantee highest entry for ledger is last
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -566,8 +588,21 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
                 log.debug("DB batch flushed time : {} s",
                         MathUtils.elapsedNanos(batchFlushStarTime) / (double) TimeUnit.SECONDS.toNanos(1));
             }
-
+            
             ledgerIndex.flush();
+            
+            // all flushed entries complete, update last add completed
+            for (Map.Entry<Long, Long> entry : flushedAddCompletionMap.entrySet()) {
+                Long ledgerId = entry.getKey();
+                Long newLac = entry.getValue();
+                if (newLac == null) {
+                    continue;
+                }
+                Long lac = lastAddCompletedMap.get(ledgerId);
+                if (lac == null || newLac > lac) {
+                    lastAddCompletedMap.put(ledgerId, newLac);
+                }
+            }
 
             cleanupExecutor.execute(() -> {
                 try {
@@ -624,6 +659,7 @@ public class DbLedgerStorage implements CompactableLedgerStorage {
         writeCacheMutex.readLock().lock();
         try {
             writeCache.deleteLedger(ledgerId);
+            lastAddCompletedMap.remove(ledgerId);
         } finally {
             writeCacheMutex.readLock().unlock();
         }
