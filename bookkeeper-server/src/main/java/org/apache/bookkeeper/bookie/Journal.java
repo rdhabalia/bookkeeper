@@ -559,6 +559,9 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
     // should we hint the filesystem to remove pages from cache after force write
     private final boolean removePagesFromCache;
 
+    // Should data be fsynced on disk before triggering the callback
+    private final boolean syncData;
+
     private final LastLogMark lastLogMark = new LastLogMark(0, 0);
 
     /**
@@ -602,6 +605,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
         this.maxJournalSize = conf.getMaxJournalSizeMB() * MB;
         this.journalPreAllocSize = conf.getJournalPreAllocSizeMB() * MB;
         this.journalWriteBufferSize = conf.getJournalWriteBufferSizeKB() * KB;
+        this.syncData = conf.getJournalSyncData();
         this.maxBackupJournals = conf.getMaxBackupJournals();
         this.forceWriteThread = new ForceWriteThread(this, conf.getJournalAdaptiveGroupWrites());
         this.maxGroupWaitInNanos = (long) (TimeUnit.MILLISECONDS.toNanos(1) * conf.getJournalMaxGroupWaitMSec());
@@ -966,8 +970,25 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
                             forceWriteBatchBytesStats.registerSuccessfulValue(batchSize);
 
                             boolean shouldRolloverJournal = (lastFlushPosition > maxJournalSize);
-                            forceWriteRequests.put(createForceWriteRequest(logFile, logId, lastFlushPosition, toFlush, shouldRolloverJournal, false));
-                            toFlush = RecyclableArrayList.newInstance();
+                            if (syncData) {
+                                // Trigger data sync to disk in the "Force-Write" thread. Callback will be triggered after data is committed to disk
+                                forceWriteRequests.put(createForceWriteRequest(logFile, logId, lastFlushPosition, toFlush, shouldRolloverJournal, false));
+                                toFlush = RecyclableArrayList.newInstance();
+                            } else {
+                                // Data is already written on the file (though it might still be in the OS page-cache)
+                                lastLogMark.setCurLogMark(logId, lastFlushPosition);
+                                for (int i = 0; i < toFlush.size(); i++) {
+                                    cbThreadPool.execute((QueueEntry) toFlush.get(i));
+                                }
+
+                                toFlush.clear();
+                                if (shouldRolloverJournal) {
+                                    forceWriteRequests.put(createForceWriteRequest(logFile, logId, lastFlushPosition,
+                                            RecyclableArrayList.newInstance(), shouldRolloverJournal, false));
+                                }
+                            }
+
+
                             batchSize = 0L;
                             // check whether journal file is over file limit
                             if (shouldRolloverJournal) {
