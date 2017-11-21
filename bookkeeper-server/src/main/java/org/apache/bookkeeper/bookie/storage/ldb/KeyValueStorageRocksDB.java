@@ -81,82 +81,82 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
             throw new IOException("Failed to load RocksDB JNI library", t);
         }
 
-        Options options = new Options().setCreateIfMissing(true);
+        try (Options options = new Options().setCreateIfMissing(true)) {
 
-        if (dbConfigType == DbConfigType.Huge) {
-            long writeBufferSizeMB = conf.getInt(ROCKSDB_WRITE_BUFFER_SIZE_MB, 64);
-            long sstSizeMB = conf.getInt(ROCKSDB_SST_SIZE_MB, 64);
-            int numLevels = conf.getInt(ROCKSDB_NUM_LEVELS, -1);
-            int numFilesInLevel0 = conf.getInt(ROCKSDB_NUM_FILES_IN_LEVEL0, 4);
-            long maxSizeInLevel1MB = conf.getLong(ROCKSDB_MAX_SIZE_IN_LEVEL1_MB, 256);
-            int blockSize = conf.getInt(ROCKSDB_BLOCK_SIZE, 64 * 1024);
-            long blockCacheSize = conf.getLong(ROCKSDB_BLOCK_CACHE_SIZE, 256 * 1024 * 1024);
-            int bloomFilterBitsPerKey = conf.getInt(ROCKSDB_BLOOM_FILTERS_BITS_PER_KEY, 10);
+            if (dbConfigType == DbConfigType.Huge) {
+                long writeBufferSizeMB = conf.getInt(ROCKSDB_WRITE_BUFFER_SIZE_MB, 64);
+                long sstSizeMB = conf.getInt(ROCKSDB_SST_SIZE_MB, 64);
+                int numLevels = conf.getInt(ROCKSDB_NUM_LEVELS, -1);
+                int numFilesInLevel0 = conf.getInt(ROCKSDB_NUM_FILES_IN_LEVEL0, 4);
+                long maxSizeInLevel1MB = conf.getLong(ROCKSDB_MAX_SIZE_IN_LEVEL1_MB, 256);
+                int blockSize = conf.getInt(ROCKSDB_BLOCK_SIZE, 64 * 1024);
+                long blockCacheSize = conf.getLong(ROCKSDB_BLOCK_CACHE_SIZE, 256 * 1024 * 1024);
+                int bloomFilterBitsPerKey = conf.getInt(ROCKSDB_BLOOM_FILTERS_BITS_PER_KEY, 10);
 
-            options.setCompressionType(CompressionType.LZ4_COMPRESSION);
-            options.setWriteBufferSize(writeBufferSizeMB * 1024 * 1024);
-            options.setMaxWriteBufferNumber(4);
-            if (numLevels > 0) {
-                options.setNumLevels(numLevels);
+                options.setCompressionType(CompressionType.LZ4_COMPRESSION);
+                options.setWriteBufferSize(writeBufferSizeMB * 1024 * 1024);
+                options.setMaxWriteBufferNumber(4);
+                if (numLevels > 0) {
+                    options.setNumLevels(numLevels);
+                }
+                options.setLevelZeroFileNumCompactionTrigger(numFilesInLevel0);
+                options.setMaxBytesForLevelBase(maxSizeInLevel1MB * 1024 * 1024);
+                options.setMaxBackgroundCompactions(16);
+                options.setMaxBackgroundFlushes(16);
+                options.setIncreaseParallelism(32);
+                options.setMaxTotalWalSize(512 * 1024 * 1024);
+                options.setMaxOpenFiles(-1);
+                options.setTargetFileSizeBase(sstSizeMB * 1024 * 1024);
+                options.setDeleteObsoleteFilesPeriodMicros(TimeUnit.HOURS.toMicros(1));
+
+                BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
+                tableOptions.setBlockSize(blockSize);
+                tableOptions.setBlockCacheSize(blockCacheSize);
+                tableOptions.setFormatVersion(2);
+                tableOptions.setChecksumType(ChecksumType.kxxHash);
+                if (bloomFilterBitsPerKey > 0) {
+                    tableOptions.setFilter(new BloomFilter(bloomFilterBitsPerKey, false));
+                }
+
+                // Options best suited for HDDs
+                tableOptions.setCacheIndexAndFilterBlocks(true);
+                options.setLevelCompactionDynamicLevelBytes(true);
+
+                options.setTableFormatConfig(tableOptions);
             }
-            options.setLevelZeroFileNumCompactionTrigger(numFilesInLevel0);
-            options.setMaxBytesForLevelBase(maxSizeInLevel1MB * 1024 * 1024);
-            options.setMaxBackgroundCompactions(16);
-            options.setMaxBackgroundFlushes(16);
-            options.setIncreaseParallelism(32);
-            options.setMaxTotalWalSize(512 * 1024 * 1024);
-            options.setMaxOpenFiles(-1);
-            options.setTargetFileSizeBase(sstSizeMB * 1024 * 1024);
-            options.setDeleteObsoleteFilesPeriodMicros(TimeUnit.HOURS.toMicros(1));
 
-            BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
-            tableOptions.setBlockSize(blockSize);
-            tableOptions.setBlockCacheSize(blockCacheSize);
-            tableOptions.setFormatVersion(2);
-            tableOptions.setChecksumType(ChecksumType.kxxHash);
-            if (bloomFilterBitsPerKey > 0) {
-                tableOptions.setFilter(new BloomFilter(bloomFilterBitsPerKey, false));
+            // Configure log level
+            String logLevel = conf.getString(ROCKSDB_LOG_LEVEL, "info");
+            switch (logLevel) {
+                case "debug":
+                    options.setInfoLogLevel(InfoLogLevel.DEBUG_LEVEL);
+                    break;
+                case "info":
+                    options.setInfoLogLevel(InfoLogLevel.INFO_LEVEL);
+                    break;
+                case "warn":
+                    options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
+                    break;
+                case "error":
+                    options.setInfoLogLevel(InfoLogLevel.ERROR_LEVEL);
+                    break;
+                default:
+                    log.warn("Unrecognized RockDB log level: {}", logLevel);
             }
 
-            // Options best suited for HDDs
-            tableOptions.setCacheIndexAndFilterBlocks(true);
-            options.setLevelCompactionDynamicLevelBytes(true);
+            // Keep log files for 1month
+            options.setKeepLogFileNum(30);
+            options.setLogFileTimeToRoll(TimeUnit.DAYS.toSeconds(1));
 
-            options.setTableFormatConfig(tableOptions);
-        }
-
-        // Configure log level
-        String logLevel = conf.getString(ROCKSDB_LOG_LEVEL, "info");
-        switch (logLevel) {
-        case "debug":
-            options.setInfoLogLevel(InfoLogLevel.DEBUG_LEVEL);
-            break;
-        case "info":
-            options.setInfoLogLevel(InfoLogLevel.INFO_LEVEL);
-            break;
-        case "warn":
-            options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
-            break;
-        case "error":
-            options.setInfoLogLevel(InfoLogLevel.ERROR_LEVEL);
-            break;
-        default:
-            log.warn("Unrecognized RockDB log level: {}", logLevel);
-        }
-
-        // Keep log files for 1month
-        options.setKeepLogFileNum(30);
-        options.setLogFileTimeToRoll(TimeUnit.DAYS.toSeconds(1));
-
-        try {
-            if (readOnly) {
-                db = RocksDB.openReadOnly(options, path);
-            } else {
-                db = RocksDB.open(options, path);
+            try {
+                if (readOnly) {
+                    db = RocksDB.openReadOnly(options, path);
+                } else {
+                    db = RocksDB.open(options, path);
+                }
+            } catch (RocksDBException e) {
+                throw new IOException("Error open RocksDB database", e);
             }
-            options.dispose();
-        } catch (RocksDBException e) {
-            throw new IOException("Error open RocksDB database", e);
         }
 
         Sync = new WriteOptions().setSync(true);
@@ -171,11 +171,11 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
     @Override
     public void close() throws IOException {
         db.close();
-        Sync.dispose();
-        DontSync.dispose();
-        Cache.dispose();
-        DontCache.dispose();
-        EmptyBatch.dispose();
+        Sync.close();
+        DontSync.close();
+        Cache.close();
+        DontCache.close();
+        EmptyBatch.close();
     }
 
     @Override
@@ -214,8 +214,7 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
 
     @Override
     public Entry<byte[], byte[]> getFloor(byte[] key) throws IOException {
-        RocksIterator iterator = db.newIterator(Cache);
-        try {
+        try (RocksIterator iterator = db.newIterator(Cache)) {
             // Position the iterator on the record whose key is >= to the supplied key
             iterator.seek(key);
 
@@ -238,15 +237,12 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
             } else {
                 return new EntryWrapper(iterator.key(), iterator.value());
             }
-        } finally {
-            iterator.dispose();
         }
     }
 
     @Override
     public Entry<byte[], byte[]> getCeil(byte[] key) throws IOException {
-        RocksIterator iterator = db.newIterator(Cache);
-        try {
+        try (RocksIterator iterator = db.newIterator(Cache)) {
             // Position the iterator on the record whose key is >= to the supplied key
             iterator.seek(key);
 
@@ -255,15 +251,13 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
             } else {
                 return null;
             }
-        } finally {
-            iterator.dispose();
         }
     }
 
     @Override
     public void delete(byte[] key) throws IOException {
         try {
-            db.remove(DontSync, key);
+            db.delete(DontSync, key);
         } catch (RocksDBException e) {
             throw new IOException("Error in RocksDB delete", e);
         }
@@ -298,8 +292,8 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
             }
 
             @Override
-            public void close() throws IOException {
-                iterator.dispose();
+            public void close() {
+                iterator.close();
             }
         };
     }
@@ -324,8 +318,8 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
             }
 
             @Override
-            public void close() throws IOException {
-                iterator.dispose();
+            public void close() {
+                iterator.close();
             }
         };
     }
@@ -338,12 +332,12 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
 
         return new CloseableIterator<Entry<byte[], byte[]>>() {
             @Override
-            public boolean hasNext() throws IOException {
+            public boolean hasNext() {
                 return iterator.isValid();
             }
 
             @Override
-            public Entry<byte[], byte[]> next() throws IOException {
+            public Entry<byte[], byte[]> next() {
                 checkArgument(iterator.isValid());
                 entryWrapper.key = iterator.key();
                 entryWrapper.value = iterator.value();
@@ -352,8 +346,8 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
             }
 
             @Override
-            public void close() throws IOException {
-                iterator.dispose();
+            public void close() {
+                iterator.close();
             }
         };
     }
@@ -377,7 +371,7 @@ public class KeyValueStorageRocksDB implements KeyValueStorage {
 
         @Override
         public void close() {
-            writeBatch.dispose();
+            writeBatch.close();
         }
 
         @Override

@@ -21,19 +21,20 @@
 package org.apache.bookkeeper.bookie;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.BindException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import io.netty.channel.unix.Errors;
 import junit.framework.Assert;
 
 import org.apache.bookkeeper.conf.TestBKConfiguration;
 import org.apache.bookkeeper.conf.ClientConfiguration;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.util.StateMachine;
-import org.apache.bookkeeper.bookie.Bookie;
 import org.apache.bookkeeper.client.BookKeeperAdmin;
 import org.apache.bookkeeper.proto.BookieServer;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
@@ -41,7 +42,6 @@ import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 import org.junit.Test;
-import org.junit.Ignore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -167,14 +167,13 @@ public class BookieInitializationTest extends BookKeeperClusterTestCase {
      * Verify duplicate bookie server startup. Should throw
      * java.net.BindException if already BK server is running
      */
-    @Ignore
     @Test(timeout = 20000)
     public void testDuplicateBookieServerStartup() throws Exception {
         File tmpDir = createTempDir("bookie", "test");
 
         ServerConfiguration conf = TestBKConfiguration.newServerConfiguration();
         int port = 12555;
-        conf.setZkServers(null).setBookiePort(port).setJournalDirName(
+        conf.setZkServers(zkUtil.getZooKeeperConnectString()).setBookiePort(port).setJournalDirName(
                 tmpDir.getPath()).setLedgerDirNames(
                 new String[] { tmpDir.getPath() });
         BookieServer bs1 = new BookieServer(conf);
@@ -185,10 +184,13 @@ public class BookieInitializationTest extends BookKeeperClusterTestCase {
             BookieServer bs2 = new BookieServer(conf);
             bs2.start();
             fail("Should throw BindException, as the bk server is already running!");
-        } catch (BindException e) {
+        } catch (BindException | Errors.NativeIoException e) {
             Assert.assertTrue("BKServer allowed duplicate startups!",
                     e.getMessage().contains("Address already in use"));
+            Assert.assertTrue(bs1.isRunning());
+            return;
         }
+        fail("Should throw a BindException and be captured");
     }
 
     /**

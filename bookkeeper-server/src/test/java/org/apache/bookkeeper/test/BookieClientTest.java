@@ -92,7 +92,7 @@ public class BookieClientTest {
     }
 
     static class ResultStruct {
-        int rc;
+        int rc = -123456;
         ByteBuffer entry;
     }
 
@@ -102,11 +102,11 @@ public class BookieClientTest {
             ResultStruct rs = (ResultStruct) ctx;
             synchronized (rs) {
                 rs.rc = rc;
-                if (bb != null) {
-                    bb.readerIndex(16);
+                if (BKException.Code.OK == rc && bb != null) {
+                    bb.readerIndex(24);
                     rs.entry = bb.nioBuffer();
-                    rs.notifyAll();
                 }
+                rs.notifyAll();
             }
         }
 
@@ -116,6 +116,10 @@ public class BookieClientTest {
         public void writeComplete(int rc, long ledgerId, long entryId, BookieSocketAddress addr, Object ctx) {
             if (ctx != null) {
                 synchronized (ctx) {
+                    if (ctx instanceof ResultStruct) {
+                        ResultStruct rs = (ResultStruct) ctx;
+                        rs.rc = rc;
+                    }
                     ctx.notifyAll();
                 }
             }
@@ -217,9 +221,10 @@ public class BookieClientTest {
     }
 
     private ByteBuf createByteBuffer(int i, long lid, long eid) {
-        ByteBuf bb = Unpooled.buffer(4 + 16);
+        ByteBuf bb = Unpooled.buffer(4 + 24);
         bb.writeLong(lid);
         bb.writeLong(eid);
+        bb.writeLong(eid - 1); 
         bb.writeInt(i);
         return bb;
     }

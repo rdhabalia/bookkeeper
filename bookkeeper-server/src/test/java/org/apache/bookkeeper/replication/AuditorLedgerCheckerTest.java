@@ -31,7 +31,9 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.bookkeeper.client.AsyncCallback.AddCallback;
@@ -49,6 +51,7 @@ import org.apache.bookkeeper.test.MultiLedgerManagerTestCase;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
+import org.apache.zookeeper.data.Stat;
 import org.junit.Before;
 import org.junit.Test;
 import org.junit.Ignore;
@@ -149,6 +152,7 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
 
         // grace period for publishing the bk-ledger
         LOG.debug("Waiting for ledgers to be marked as under replicated");
+        forceAudit();
         underReplicaLatch.await(5, TimeUnit.SECONDS);
         Map<Long, String> urLedgerData = getUrLedgerData(urLedgerList);
         assertEquals("Missed identifying under replicated ledgers", 1,
@@ -261,7 +265,6 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
      * Test Auditor should consider Readonly bookie as available bookie. Should not publish ur ledgers for
      * readonly bookies.
      */
-    @Ignore
     @Test(timeout = 20000)
     public void testReadOnlyBookieExclusionFromURLedgersCheck() throws Exception {
         LedgerHandle lh = createAndAddEntriesToLedger();
@@ -278,13 +281,13 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
 
         // grace period for publishing the bk-ledger
         LOG.debug("Waiting for Auditor to finish ledger check.");
+        forceAudit();
         assertFalse("latch should not have completed", underReplicaLatch.await(5, TimeUnit.SECONDS));
     }
 
     /**
      * Test Auditor should consider Readonly bookie fail and publish ur ledgers for readonly bookies.
      */
-    @Ignore
     @Test(timeout = 20000)
     public void testReadOnlyBookieShutdown() throws Exception {
         LedgerHandle lh = createAndAddEntriesToLedger();
@@ -296,6 +299,7 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
         final CountDownLatch underReplicaLatch = registerUrLedgerWatcher(count);
 
         int bkIndex = bs.size() - 1;
+        LOG.debug("Moving bookie {} {} to read only...", bkIndex, bs.get(bkIndex));
         ServerConfiguration bookieConf = bsConfs.get(bkIndex);
         BookieServer bk = bs.get(bkIndex);
         bookieConf.setReadOnlyModeEnabled(true);
@@ -303,12 +307,14 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
 
         // grace period for publishing the bk-ledger
         LOG.debug("Waiting for Auditor to finish ledger check.");
-        assertFalse("latch should not have completed", underReplicaLatch.await(5, TimeUnit.SECONDS));
+        forceAudit();
+        assertFalse("latch should not have completed", underReplicaLatch.await(1, TimeUnit.SECONDS));
 
         String shutdownBookie = shutdownBookie(bkIndex);
 
         // grace period for publishing the bk-ledger
         LOG.debug("Waiting for ledgers to be marked as under replicated");
+        forceAudit();
         underReplicaLatch.await(5, TimeUnit.SECONDS);
         Map<Long, String> urLedgerData = getUrLedgerData(urLedgerList);
         assertEquals("Missed identifying under replicated ledgers", 1, urLedgerList.size());
@@ -322,6 +328,17 @@ public class AuditorLedgerCheckerTest extends MultiLedgerManagerTestCase {
         String data = urLedgerData.get(ledgerId);
         assertTrue("Bookie " + shutdownBookie + "is not listed in the ledger as missing replica :" + data,
                 data.contains(shutdownBookie));
+    }
+
+    private void forceAudit() throws InterruptedException, ExecutionException, TimeoutException {
+        for (AuditorElector ae : auditorElectors.values()) {
+            Auditor auditor = ae.getAuditor();
+            if (auditor != null) {
+                LOG.debug("Forcing audit {}", ae);
+                ae.getAuditor().forceAudit().get(5, TimeUnit.SECONDS);
+                LOG.debug("Audit complete...");
+            }
+        }
     }
 
     /**

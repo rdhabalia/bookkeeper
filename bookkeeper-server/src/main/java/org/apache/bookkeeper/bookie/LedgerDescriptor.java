@@ -56,4 +56,6 @@ public abstract class LedgerDescriptor {
 
     abstract long addEntry(ByteBuf entry) throws IOException;
     abstract ByteBuf readEntry(long entryId) throws IOException;
+    
+    abstract long getLastAddConfirmed() throws IOException;
 }

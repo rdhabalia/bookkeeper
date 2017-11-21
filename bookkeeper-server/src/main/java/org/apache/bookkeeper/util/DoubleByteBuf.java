@@ -22,6 +22,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.channels.FileChannel;
 import java.nio.channels.GatheringByteChannel;
 import java.nio.channels.ScatteringByteChannel;
 
@@ -40,15 +41,23 @@ public class DoubleByteBuf extends AbstractReferenceCountedByteBuf {
 
     private ByteBuf b1;
     private ByteBuf b2;
-    private final Handle recyclerHandle;
+    private final Handle<DoubleByteBuf> recyclerHandle;
+    
+    private void reset() {
+        // Double release of buffer for the initial ref-count and the internal retain() when the DoubleByteBuf was
+        // created
+        b1.release(2);
+        b2.release(2);
+        b1 = b2 = null;
+    }
 
     private static final Recycler<DoubleByteBuf> RECYCLER = new Recycler<DoubleByteBuf>() {
-        protected DoubleByteBuf newObject(Recycler.Handle handle) {
+        protected DoubleByteBuf newObject(Recycler.Handle<DoubleByteBuf> handle) {
             return new DoubleByteBuf(handle);
         }
     };
 
-    private DoubleByteBuf(Handle recyclerHandle) {
+    private DoubleByteBuf(Handle<DoubleByteBuf> recyclerHandle) {
         super(Integer.MAX_VALUE);
         this.recyclerHandle = recyclerHandle;
     }
@@ -191,7 +200,57 @@ public class DoubleByteBuf extends AbstractReferenceCountedByteBuf {
     }
 
     @Override
+    protected short _getShortLE(int index) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected int _getUnsignedMediumLE(int index) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected int _getIntLE(int index) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected long _getLongLE(int index) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected void _setShortLE(int index, int value) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected void _setMediumLE(int index, int value) {
+        throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    protected void _setIntLE(int index, int value) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    protected void _setLongLE(int index, long value) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public int getBytes(int index, FileChannel out, long position, int length) throws IOException {
+        throw new UnsupportedOperationException();
+    }
+    
+    @Override
     public int getBytes(int index, GatheringByteChannel out, int length) throws IOException {
+        throw new UnsupportedOperationException();
+    }
+    
+    @Override
+    public int setBytes(int index, FileChannel in, long position, int length) throws IOException {
         throw new UnsupportedOperationException();
     }
 
@@ -323,12 +382,8 @@ public class DoubleByteBuf extends AbstractReferenceCountedByteBuf {
 
     @Override
     protected void deallocate() {
-        // Double release of buffer for the initial ref-count and the internal retain() when the DoubleByteBuf was
-        // created
-        b1.release(2);
-        b2.release(2);
-        b1 = b2 = null;
-        RECYCLER.recycle(this, recyclerHandle);
+        reset();
+        recyclerHandle.recycle(this);
     }
 
     @Override

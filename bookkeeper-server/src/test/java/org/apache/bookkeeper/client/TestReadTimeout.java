@@ -50,9 +50,7 @@ public class TestReadTimeout extends BookKeeperClusterTestCase {
         this.digestType = DigestType.CRC32;
     }
 
-    @Ignore
     @SuppressWarnings("deprecation")
-    @Test(timeout=60000)
     public void testReadTimeout() throws Exception {
         final AtomicBoolean completed = new AtomicBoolean(false);
 
@@ -72,13 +70,18 @@ public class TestReadTimeout extends BookKeeperClusterTestCase {
         final BookieSocketAddress bookieToSleep
             = writelh.getLedgerMetadata().getEnsemble(numEntries).get(0);
         int sleeptime = baseClientConf.getReadTimeout()*3;
-        CountDownLatch latch = sleepBookie(bookieToSleep, sleeptime);
+        CountDownLatch addEntryLatch = new CountDownLatch(1);
+        CountDownLatch latch = sleepBookie(bookieToSleep, addEntryLatch);
         latch.await();
+
+        // Wait for bookie to completely suspend processing
+        Thread.sleep(2000);
 
         writelh.asyncAddEntry(tmp.getBytes(), 
                 new AddCallback() {
                     public void addComplete(int rc, LedgerHandle lh, 
                                             long entryId, Object ctx) {
+                        addEntryLatch.countDown();
                         completed.set(true);
                     }
                 }, null);

@@ -285,6 +285,16 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
         long enqueueTime;
         OpStatsLogger journalAddEntryStats;
 
+        private void reset() {
+            entry = null;
+            ledgerId = -1L;
+            entryId = -1L;
+            cb = null;
+            ctx = null;
+            enqueueTime = -1L;
+            journalAddEntryStats = null;
+        }
+        
         static QueueEntry create(ByteBuf entry, long ledgerId, long entryId, WriteCallback cb, Object ctx,
                 long enqueueTime, OpStatsLogger journalAddEntryStats) {
             QueueEntry qe = RECYCLER.get();
@@ -312,20 +322,21 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
             recycle();
         }
 
-        private final Handle recyclerHandle;
+        private final Handle<QueueEntry> recyclerHandle;
 
-        private QueueEntry(Handle recyclerHandle) {
+        private QueueEntry(Handle<QueueEntry> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
         private static final Recycler<QueueEntry> RECYCLER = new Recycler<QueueEntry>() {
-            protected QueueEntry newObject(Recycler.Handle handle) {
+            protected QueueEntry newObject(Recycler.Handle<QueueEntry> handle) {
                 return new QueueEntry(handle);
             }
         };
 
         private void recycle() {
-            RECYCLER.recycle(this, recyclerHandle);
+            this.reset();
+            recyclerHandle.recycle(this);
         }
     }
 
@@ -336,6 +347,16 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
         private boolean isMarker;
         private long lastFlushedPosition;
         private long logId;
+        
+        private void reset() {
+            logFile = null;
+            if (forceWriteWaiters != null) {
+                forceWriteWaiters.recycle();
+                forceWriteWaiters = null;
+            }
+            lastFlushedPosition = -1L;
+            logId = -1L;
+        }
 
         public int process(boolean shouldForceWrite) throws IOException {
             forceWriteQueueSize.dec();
@@ -379,19 +400,15 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
             }
         }
 
-        private final Handle recyclerHandle;
+        private final Handle<ForceWriteRequest> recyclerHandle;
 
-        private ForceWriteRequest(Handle recyclerHandle) {
+        private ForceWriteRequest(Handle<ForceWriteRequest> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
         private void recycle() {
-            logFile = null;
-            if (forceWriteWaiters != null) {
-                forceWriteWaiters.recycle();
-                forceWriteWaiters = null;
-            }
-            ForceWriteRequestsRecycler.recycle(this, recyclerHandle);
+            this.reset();
+            recyclerHandle.recycle(this);
         }
     }
 
@@ -413,7 +430,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
     }
 
     private final Recycler<ForceWriteRequest> ForceWriteRequestsRecycler = new Recycler<ForceWriteRequest>() {
-        protected ForceWriteRequest newObject(Recycler.Handle handle) {
+        protected ForceWriteRequest newObject(Recycler.Handle<ForceWriteRequest> handle) {
             return new ForceWriteRequest(handle);
         }
     };
@@ -853,8 +870,8 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
         int journalFormatVersionToWrite = conf.getJournalFormatVersionToWrite();
         JournalChannel logFile = null;
         forceWriteThread.start();
-        Stopwatch journalCreationWatcher = new Stopwatch();
-        Stopwatch journalFlushWatcher = new Stopwatch();
+        Stopwatch journalCreationWatcher = Stopwatch.createUnstarted();
+        Stopwatch journalFlushWatcher = Stopwatch.createUnstarted();
         long batchSize = 0;
         try {
             List<Long> journalIds = listJournalIds(journalDirectory, null);
@@ -883,7 +900,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
                                         removePagesFromCache,
                                         journalFormatVersionToWrite);
                     journalCreationStats.registerSuccessfulEvent(
-                            journalCreationWatcher.stop().elapsedTime(TimeUnit.NANOSECONDS), TimeUnit.NANOSECONDS);
+                            journalCreationWatcher.stop().elapsed(TimeUnit.NANOSECONDS), TimeUnit.NANOSECONDS);
 
                     bc = logFile.getBufferedChannel();
 
@@ -952,7 +969,7 @@ class Journal extends BookieCriticalThread implements CheckpointSource {
                             bc.flush(false);
                             lastFlushPosition = bc.position();
                             journalFlushStats.registerSuccessfulEvent(
-                                    journalFlushWatcher.stop().elapsedTime(TimeUnit.NANOSECONDS), TimeUnit.NANOSECONDS);
+                                    journalFlushWatcher.stop().elapsed(TimeUnit.NANOSECONDS), TimeUnit.NANOSECONDS);
 
                             // Trace the lifetime of entries through persistence
                             if (LOG.isDebugEnabled()) {

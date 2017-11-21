@@ -44,8 +44,6 @@ import org.apache.bookkeeper.bookie.EntryLogger.EntryLogScanner;
 import org.apache.bookkeeper.bookie.Journal.JournalScanner;
 import org.apache.bookkeeper.bookie.storage.ldb.DbLedgerStorage;
 import org.apache.bookkeeper.bookie.storage.ldb.EntryLocationIndex;
-import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageFactory.DbConfigType;
-import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageRocksDB;
 import org.apache.bookkeeper.bookie.storage.ldb.LocationsIndexRebuildOp;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeper;
@@ -1128,7 +1126,7 @@ public class BookieShell implements Tool {
                 bookies.addAll(availableBookies);
             } else if (cmdLine.hasOption("ro")) {
                 Collection<BookieSocketAddress> roBookies = bka
-                        .getReadOnlyBookies();
+                        .getReadOnlyBookiesAsync();
                 bookies.addAll(roBookies);
             }
             for (BookieSocketAddress b : bookies) {

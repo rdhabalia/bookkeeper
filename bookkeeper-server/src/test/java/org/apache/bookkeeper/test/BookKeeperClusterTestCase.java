@@ -320,11 +320,15 @@ public abstract class BookKeeperClusterTestCase {
      * @throws InterruptedException
      * @throws IOException
      */
-    public void sleepBookie(BookieSocketAddress addr, final CountDownLatch l)
+    public CountDownLatch sleepBookie(BookieSocketAddress addr, final CountDownLatch l)
             throws Exception {
         for (final BookieServer bookie : bs) {
             if (bookie.getLocalAddress().equals(addr)) {
+
                 bookie.suspendProcessing();
+                LOG.info("bookie {} is asleep", bookie.getLocalAddress());
+                final CountDownLatch sleepingLatch = new CountDownLatch(1);
+                sleepingLatch.countDown();
                 Thread sleeper = new Thread() {
                     public void run() {
                         try {
@@ -336,7 +340,7 @@ public abstract class BookKeeperClusterTestCase {
                     }
                 };
                 sleeper.start();
-                return;
+                return sleepingLatch;
             }
         }
         throw new IOException("Bookie not found");

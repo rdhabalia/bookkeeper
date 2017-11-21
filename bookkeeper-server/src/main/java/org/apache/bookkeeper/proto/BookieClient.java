@@ -212,7 +212,7 @@ public class BookieClient implements PerChannelBookieClientFactory {
     }
 
     private static class ChannelReadyForAddEntryCallback implements GenericCallback<PerChannelBookieClient> {
-        private final Handle recyclerHandle;
+        private final Handle<ChannelReadyForAddEntryCallback> recyclerHandle;
 
         private BookieClient bookieClient;
         private ByteBuf toSend;
@@ -223,6 +223,18 @@ public class BookieClient implements PerChannelBookieClientFactory {
         private WriteCallback cb;
         private int options;
         private byte[] masterKey;
+        
+        private void reset() {
+            bookieClient = null;
+            toSend = null;
+            ledgerId = -1L;
+            entryId = -1L;
+            addr = null;
+            ctx = null;
+            cb = null;
+            options = -1;
+            masterKey = null;
+        }
 
         static ChannelReadyForAddEntryCallback create(BookieClient bookieClient, ByteBuf toSend, long ledgerId,
                 long entryId, BookieSocketAddress addr, Object ctx, WriteCallback cb, int options, byte[] masterKey) {
@@ -261,27 +273,19 @@ public class BookieClient implements PerChannelBookieClientFactory {
             }
         }
 
-        private ChannelReadyForAddEntryCallback(Handle recyclerHandle) {
+        private ChannelReadyForAddEntryCallback(Handle<ChannelReadyForAddEntryCallback> recyclerHandle) {
             this.recyclerHandle = recyclerHandle;
         }
 
         private static final Recycler<ChannelReadyForAddEntryCallback> RECYCLER = new Recycler<ChannelReadyForAddEntryCallback>() {
-            protected ChannelReadyForAddEntryCallback newObject(Recycler.Handle recyclerHandle) {
+            protected ChannelReadyForAddEntryCallback newObject(Recycler.Handle<ChannelReadyForAddEntryCallback> recyclerHandle) {
                 return new ChannelReadyForAddEntryCallback(recyclerHandle);
             }
         };
 
         public void recycle() {
-            bookieClient = null;
-            toSend = null;
-            ledgerId = -1;
-            entryId = -1;
-            addr = null;
-            ctx = null;
-            cb = null;
-            options = -1;
-            masterKey = null;
-            RECYCLER.recycle(this, recyclerHandle);
+            reset();
+            recyclerHandle.recycle(this);
         }
     }
 

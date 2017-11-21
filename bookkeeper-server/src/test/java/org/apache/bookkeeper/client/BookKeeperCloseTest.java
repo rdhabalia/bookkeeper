@@ -532,7 +532,6 @@ public class BookKeeperCloseTest extends BookKeeperClusterTestCase {
      * Test that the bookkeeper client doesn't leave any threads hanging around.
      * See {@link https://issues.apache.org/jira/browse/BOOKKEEPER-804}
      */
-    @Ignore
     @Test(timeout = 60000)
     public void testBookKeeperCloseThreads() throws Exception {
         ThreadGroup group = new ThreadGroup("test-group");
