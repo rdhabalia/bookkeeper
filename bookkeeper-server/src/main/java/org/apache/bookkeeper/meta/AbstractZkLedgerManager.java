@@ -349,7 +349,7 @@ abstract class AbstractZkLedgerManager implements LedgerManager, Watcher {
     }
 
     @Override
-    public void existLedgerMetadata(final long ledgerId, final GenericCallback<Boolean> callback) {
+    public void existsLedgerMetadata(final long ledgerId, final GenericCallback<Boolean> callback) {
         zk.exists(getLedgerPath(ledgerId), false, (int rc, String path, Object ctx, Stat stat) -> {
             if (rc == KeeperException.Code.NONODE.intValue()) {
                 callback.operationComplete(BKException.Code.NoSuchLedgerExistsException, false);

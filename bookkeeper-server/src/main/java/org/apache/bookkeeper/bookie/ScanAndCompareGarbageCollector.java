@@ -154,7 +154,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
         semaphore.acquire();
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean ledgerDeleted = new AtomicBoolean(false);
-        ledgerManager.existLedgerMetadata(ledgerId, (rc, exists) -> {
+        ledgerManager.existsLedgerMetadata(ledgerId, (rc, exists) -> {
             if (rc == BKException.Code.NoSuchLedgerExistsException) {
                 ledgerDeleted.set(true);
             } else if (rc == BKException.Code.OK) {

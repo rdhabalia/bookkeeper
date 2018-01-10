@@ -421,7 +421,7 @@ public class MSLedgerManagerFactory extends LedgerManagerFactory {
         }
 
         @Override
-        public void existLedgerMetadata(final long ledgerId, final GenericCallback<Boolean> callback) {
+        public void existsLedgerMetadata(final long ledgerId, final GenericCallback<Boolean> callback) {
             final String key = ledgerId2Key(ledgerId);
             MetastoreCallback<Versioned<Value>> msCallback = new MetastoreCallback<Versioned<Value>>() {
                 @Override

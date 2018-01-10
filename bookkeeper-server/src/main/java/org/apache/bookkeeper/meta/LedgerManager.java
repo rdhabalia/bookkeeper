@@ -101,7 +101,7 @@ public interface LedgerManager extends Closeable {
      *          <li>{@link BKException.Code.ZKException} for other issue</li>
      *          </ul>
      */
-    void existLedgerMetadata(long ledgerId, GenericCallback<Boolean> callback);
+    void existsLedgerMetadata(long ledgerId, GenericCallback<Boolean> callback);
     
     /**
      * Write ledger metadata.

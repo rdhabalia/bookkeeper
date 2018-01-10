@@ -144,14 +144,14 @@ public class CleanupLedgerManager implements LedgerManager {
     }
 
     @Override
-    public void existLedgerMetadata(final long ledgerId, final GenericCallback<Boolean> callback) {
+    public void existsLedgerMetadata(final long ledgerId, final GenericCallback<Boolean> callback) {
         closeLock.readLock().lock();
         try {
             if (closed) {
                 callback.operationComplete(BKException.Code.ClientClosedException, false);
                 return;
             }
-            underlying.existLedgerMetadata(ledgerId, new CleanupGenericCallback<Boolean>(callback));
+            underlying.existsLedgerMetadata(ledgerId, new CleanupGenericCallback<Boolean>(callback));
         } finally {
             closeLock.readLock().unlock();
         }
