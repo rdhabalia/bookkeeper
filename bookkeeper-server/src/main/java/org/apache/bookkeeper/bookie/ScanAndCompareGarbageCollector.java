@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.bookkeeper.bookie.GarbageCollectorThread.CompactableLedgerStorage;
 import org.apache.bookkeeper.client.BKException;
@@ -87,13 +88,13 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
             // Get a set of all ledgers on the bookie
             NavigableSet<Long> bkActiveLedgers = Sets.newTreeSet(ledgerStorage.getActiveLedgersInRange(0, Long.MAX_VALUE));
 
+            Semaphore semaphore = new Semaphore(MAX_CONCURRENT_ZK_REQUESTS);
             // Iterate over all the ledger on the metadata store
             LedgerRangeIterator ledgerRangeIterator = ledgerManager.getLedgerRanges();
-
             if (!ledgerRangeIterator.hasNext()) {
                 // Empty global active ledgers, need to remove all local active ledgers.
                 for (long ledgerId : bkActiveLedgers) {
-                    garbageCleaner.clean(ledgerId);
+                    gcLedgerSafely(garbageCleaner, ledgerId, ledgerManager, semaphore);
                 }
             }
 
@@ -127,7 +128,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                 }
                 for (Long bkLid : subBkActiveLedgers) {
                     if (!ledgersInMetadata.contains(bkLid)) {
-                        garbageCleaner.clean(bkLid);
+                        gcLedgerSafely(garbageCleaner, bkLid, ledgerManager, semaphore);
                     }
                 }
                 lastEnd = end;
@@ -135,6 +136,38 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
         } catch (Exception e) {
             // ignore exception, collecting garbage next time
             LOG.warn("Exception when iterating over the metadata {}", e);
+        }
+    }
+
+    /**
+     * Cleans ledger safely by verifying ledger-metadata is deleted from the zk else it skips ledger-gc if ledger-metada
+     * exists in zk.
+     * 
+     * @param garbageCleaner
+     * @param ledgerId
+     * @param ledgerManager
+     * @param semaphore
+     * @throws InterruptedException
+     */
+    private void gcLedgerSafely(GarbageCleaner garbageCleaner, long ledgerId, LedgerManager ledgerManager,
+            Semaphore semaphore) throws InterruptedException {
+        semaphore.acquire();
+        CountDownLatch latch = new CountDownLatch(1);
+        AtomicBoolean ledgerDeleted = new AtomicBoolean(false);
+        ledgerManager.existLedgerMetadata(ledgerId, (rc, exists) -> {
+            if (rc == BKException.Code.NoSuchLedgerExistsException) {
+                ledgerDeleted.set(true);
+            } else if (rc == BKException.Code.OK) {
+                LOG.warn("Can't delete ledger {} with metadata exists in zk ", ledgerId);
+            } else {
+                LOG.warn("Fail to check {} exists in zk {}", ledgerId, BKException.getMessage(rc));
+            }
+            latch.countDown();
+            semaphore.release();
+        });
+        latch.await();
+        if (ledgerDeleted.get()) {
+            garbageCleaner.clean(ledgerId);
         }
     }
 
