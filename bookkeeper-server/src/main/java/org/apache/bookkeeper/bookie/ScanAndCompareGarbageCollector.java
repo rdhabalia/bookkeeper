@@ -88,13 +88,12 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
             // Get a set of all ledgers on the bookie
             NavigableSet<Long> bkActiveLedgers = Sets.newTreeSet(ledgerStorage.getActiveLedgersInRange(0, Long.MAX_VALUE));
 
-            Semaphore semaphore = new Semaphore(MAX_CONCURRENT_ZK_REQUESTS);
             // Iterate over all the ledger on the metadata store
             LedgerRangeIterator ledgerRangeIterator = ledgerManager.getLedgerRanges();
             if (!ledgerRangeIterator.hasNext()) {
                 // Empty global active ledgers, need to remove all local active ledgers.
                 for (long ledgerId : bkActiveLedgers) {
-                    gcLedgerSafely(garbageCleaner, ledgerId, ledgerManager, semaphore);
+                    gcLedgerSafely(garbageCleaner, ledgerId, ledgerManager);
                 }
             }
 
@@ -128,7 +127,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                 }
                 for (Long bkLid : subBkActiveLedgers) {
                     if (!ledgersInMetadata.contains(bkLid)) {
-                        gcLedgerSafely(garbageCleaner, bkLid, ledgerManager, semaphore);
+                        gcLedgerSafely(garbageCleaner, bkLid, ledgerManager);
                     }
                 }
                 lastEnd = end;
@@ -149,9 +148,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
      * @param semaphore
      * @throws InterruptedException
      */
-    private void gcLedgerSafely(GarbageCleaner garbageCleaner, long ledgerId, LedgerManager ledgerManager,
-            Semaphore semaphore) throws InterruptedException {
-        semaphore.acquire();
+    private void gcLedgerSafely(GarbageCleaner garbageCleaner, long ledgerId, LedgerManager ledgerManager) throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean ledgerDeleted = new AtomicBoolean(false);
         ledgerManager.existsLedgerMetadata(ledgerId, (rc, exists) -> {
@@ -163,7 +160,6 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                 LOG.warn("Fail to check {} exists in zk {}", ledgerId, BKException.getMessage(rc));
             }
             latch.countDown();
-            semaphore.release();
         });
         latch.await();
         if (ledgerDeleted.get()) {
