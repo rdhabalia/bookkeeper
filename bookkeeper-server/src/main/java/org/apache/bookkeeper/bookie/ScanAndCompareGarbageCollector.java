@@ -21,16 +21,20 @@
 
 package org.apache.bookkeeper.bookie;
 
+import com.google.common.annotations.VisibleForTesting;
 import java.util.ArrayList;
 import java.util.NavigableSet;
 import java.util.Set;
 import java.util.SortedMap;
+import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.bookkeeper.bookie.GarbageCollectorThread.CompactableLedgerStorage;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.LedgerMetadata;
+import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.meta.LedgerManager.LedgerRange;
 import org.apache.bookkeeper.meta.LedgerManager.LedgerRangeIterator;
@@ -69,16 +73,23 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
     private final boolean checkOverReplicatedLedgers;
     private final ZooKeeper zk;
     private final String zkLedgersRootPath;
+    private final boolean verifyMetadataOnGc;
+
+    @VisibleForTesting
+    public ScanAndCompareGarbageCollector(LedgerManager ledgerManager, CompactableLedgerStorage ledgerStorage, ServerConfiguration conf) {
+        this(ledgerManager, ledgerStorage, null, null, false, conf.getZkLedgersRootPath(), conf.getVerifyMetadataOnGC());
+    }
 
     public ScanAndCompareGarbageCollector(LedgerManager ledgerManager, CompactableLedgerStorage ledgerStorage,
             BookieSocketAddress selfBookieAddress, ZooKeeper zk, boolean checkOverReplicatedLedgers,
-            String zkLedgersRootPath) {
+            String zkLedgersRootPath, boolean verifyMetadataOnGc) {
         this.ledgerManager = ledgerManager;
         this.ledgerStorage = ledgerStorage;
         this.selfBookieAddress = selfBookieAddress;
         this.checkOverReplicatedLedgers = checkOverReplicatedLedgers;
         this.zk = zk;
         this.zkLedgersRootPath = zkLedgersRootPath;
+        this.verifyMetadataOnGc = verifyMetadataOnGc;
     }
 
     @Override
@@ -86,16 +97,6 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
         try {
             // Get a set of all ledgers on the bookie
             NavigableSet<Long> bkActiveLedgers = Sets.newTreeSet(ledgerStorage.getActiveLedgersInRange(0, Long.MAX_VALUE));
-
-            // Iterate over all the ledger on the metadata store
-            LedgerRangeIterator ledgerRangeIterator = ledgerManager.getLedgerRanges();
-
-            if (!ledgerRangeIterator.hasNext()) {
-                // Empty global active ledgers, need to remove all local active ledgers.
-                for (long ledgerId : bkActiveLedgers) {
-                    garbageCleaner.clean(ledgerId);
-                }
-            }
 
             if (checkOverReplicatedLedgers) {
                 // remove all the overreplicated ledgers from the local bookie
@@ -107,30 +108,51 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                 }
             }
 
-            long lastEnd = 0;
-
-            while(ledgerRangeIterator.hasNext()) {
-                LedgerRange lRange = ledgerRangeIterator.next();
-
-                Long start = lastEnd;
-                Long end = lRange.end() + 1;
-                if (!ledgerRangeIterator.hasNext()) {
+            // Iterate over all the ledger on the metadata store
+            LedgerRangeIterator ledgerRangeIterator = ledgerManager.getLedgerRanges();
+            Set<Long> ledgersInMetadata = null;
+            long start;
+            long end = -1;
+            boolean done = false;
+            while (!done) {
+                start = end + 1;
+                if (ledgerRangeIterator.hasNext()) {
+                    LedgerRange lRange = ledgerRangeIterator.next();
+                    ledgersInMetadata = lRange.getLedgers();
+                    end = lRange.end();
+                } else {
+                    ledgersInMetadata = new TreeSet<>();
                     end = Long.MAX_VALUE;
+                    done = true;
                 }
 
                 Iterable<Long> subBkActiveLedgers = bkActiveLedgers.subSet(start, true, end, false);
 
-                Set<Long> ledgersInMetadata = lRange.getLedgers();
                 if (LOG.isDebugEnabled()) {
                     LOG.debug("Active in metadata {}, Active in bookie {}",
                           ledgersInMetadata, subBkActiveLedgers);
                 }
                 for (Long bkLid : subBkActiveLedgers) {
                     if (!ledgersInMetadata.contains(bkLid)) {
+                        if (verifyMetadataOnGc) {
+                            CountDownLatch latch = new CountDownLatch(1);
+                            final AtomicInteger metaRC = new AtomicInteger(0);
+                            ledgerManager.readLedgerMetadata(bkLid, (int rc, LedgerMetadata x) -> {
+                                metaRC.set(rc);
+                                latch.countDown();
+                            });
+                            latch.await();
+                            if (metaRC.get() != BKException.Code.NoSuchLedgerExistsException) {
+                                LOG.warn(
+                                        "Ledger {} Missing in metadata list, but ledgerManager returned rc: {}.",
+                                        bkLid,
+                                        metaRC.get());
+                                continue;
+                            }
+                        }
                         garbageCleaner.clean(bkLid);
                     }
                 }
-                lastEnd = end;
             }
         } catch (Exception e) {
             // ignore exception, collecting garbage next time

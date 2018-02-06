@@ -80,7 +80,7 @@ public class TestGcOverreplicatedLedger extends LedgerManagerTestCase {
 
         final CompactableLedgerStorage mockLedgerStorage = new MockLedgerStorage();
         final GarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(ledgerManager, mockLedgerStorage,
-                bookieNotInEnsemble, zkc, true, baseConf.getZkLedgersRootPath());
+                bookieNotInEnsemble, zkc, true, baseConf.getZkLedgersRootPath(), baseConf.getVerifyMetadataOnGC());
         garbageCollector.gc(new GarbageCleaner() {
 
             @Override
@@ -128,7 +128,7 @@ public class TestGcOverreplicatedLedger extends LedgerManagerTestCase {
 
         final CompactableLedgerStorage mockLedgerStorage = new MockLedgerStorage();
         final GarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(ledgerManager, mockLedgerStorage,
-                address, zkc, true, baseConf.getZkLedgersRootPath());
+                address, zkc, true, baseConf.getZkLedgersRootPath(), baseConf.getVerifyMetadataOnGC());
         garbageCollector.gc(new GarbageCleaner() {
 
             @Override
@@ -175,7 +175,7 @@ public class TestGcOverreplicatedLedger extends LedgerManagerTestCase {
 
         final CompactableLedgerStorage mockLedgerStorage = new MockLedgerStorage();
         final GarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(ledgerManager, mockLedgerStorage,
-                bookieNotInEnsemble, zkc, true, baseConf.getZkLedgersRootPath());
+                bookieNotInEnsemble, zkc, true, baseConf.getZkLedgersRootPath(), baseConf.getVerifyMetadataOnGC());
         garbageCollector.gc(new GarbageCleaner() {
 
             @Override
