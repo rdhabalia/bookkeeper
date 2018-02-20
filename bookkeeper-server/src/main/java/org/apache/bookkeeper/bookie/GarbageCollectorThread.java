@@ -355,7 +355,8 @@ public class GarbageCollectorThread extends SafeRunnable {
             }
             // gc inactive/deleted ledgers
             GarbageCollector collector = new ScanAndCompareGarbageCollector(ledgerManager, ledgerStorage,
-                    selfBookieAddress, zk, checkOverreplicatedLedgers, conf.getZkLedgersRootPath());
+                    selfBookieAddress, zk, checkOverreplicatedLedgers, conf.getZkLedgersRootPath(),
+                    conf.getVerifyMetadataOnGC());
 
             collector.gc(garbageCleaner);
 

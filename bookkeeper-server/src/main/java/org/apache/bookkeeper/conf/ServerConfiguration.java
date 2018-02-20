@@ -48,6 +48,7 @@ public class ServerConfiguration extends AbstractConfiguration {
     // Gc Parameters
     protected final static String GC_WAIT_TIME = "gcWaitTime";
     protected final static String GC_OVERREPLICATED_LEDGER_WAIT_TIME = "gcOverreplicatedLedgerWaitTime";
+    protected static final String VERIFY_METADATA_ON_GC = "verifyMetadataOnGC";
     // Sync Parameters
     protected final static String FLUSH_INTERVAL = "flushInterval";
     // Bookie death watch interval
@@ -232,6 +233,25 @@ public class ServerConfiguration extends AbstractConfiguration {
      */
     public ServerConfiguration setGcOverreplicatedLedgerWaitTime(long gcWaitTime, TimeUnit unit) {
         this.setProperty(GC_OVERREPLICATED_LEDGER_WAIT_TIME, Long.toString(unit.toMillis(gcWaitTime)));
+        return this;
+    }
+
+    /**
+     * Get whether the bookie is configured to double check prior to gc.
+     *
+     * @return use transactional compaction
+     */
+    public boolean getVerifyMetadataOnGC() {
+        return this.getBoolean(VERIFY_METADATA_ON_GC, false);
+    }
+
+    /**
+     * Set whether the bookie is configured to double check prior to gc.
+     * @param verifyMetadataOnGC
+     * @return server configuration
+     */
+    public ServerConfiguration setVerifyMetadataOnGc(boolean verifyMetadataOnGC) {
+        this.setProperty(VERIFY_METADATA_ON_GC, verifyMetadataOnGC);
         return this;
     }
 
