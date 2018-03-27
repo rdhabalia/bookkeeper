@@ -26,7 +26,7 @@ archived_versions:
 - "4.2.0"
 - "4.1.0"
 - "4.0.0"
-latest_version: "4.7.0-SNAPSHOT"
+latest_version: "4.7.0"
 latest_release: "4.6.1"
 stable_release: "4.5.0"
 distributedlog_version: "0.5.0"

@@ -59,7 +59,7 @@ To check that licensing is correct, generate the tarball and run the script agai
 ~/src/bookkeeper $ mvn clean package -DskipTests
 ...
 
-~/src/bookkeeper $ dev/check-binary-license bookkeeper-dist/server/target/bookkeeper-server-4.7.0-SNAPSHOT-bin.tar.gz
+~/src/bookkeeper $ dev/check-binary-license bookkeeper-dist/server/target/bookkeeper-server-4.7.0-bin.tar.gz
 com.google.protobuf-protobuf-java-3.4.0.jar unaccounted for in LICENSE
 deps/protobuf-3.4.0/LICENSE bundled, but not linked from LICENSE
 
