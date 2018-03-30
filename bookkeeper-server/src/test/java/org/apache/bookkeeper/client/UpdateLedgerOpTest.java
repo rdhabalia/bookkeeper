@@ -180,7 +180,6 @@ public class UpdateLedgerOpTest extends BookKeeperClusterTestCase {
     /**
      * Tests verifies the ensemble reformation after updating the bookie id to
      * short hostname in the existing ensemble.
-     *
      * Ignore this unit test for now because of network issues and will need to add it back.
      */
     @Test(timeout = 120000)
