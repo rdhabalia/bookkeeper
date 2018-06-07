@@ -22,6 +22,7 @@
     <groupId>org.apache.bookkeeper</groupId>
     <artifactId>bookkeeper</artifactId>
     <version>4.7.1</version>
+    <relativePath>..</relativePath>
   </parent>
   <groupId>org.apache.bookkeeper.tests</groupId>
   <artifactId>tests-parent</artifactId>
@@ -40,6 +41,7 @@
     <module>integration-tests-topologies</module>
     <module>backward-compat</module>
     <module>integration</module>
+    <module>scripts</module>
   </modules>
   <build>
     <plugins>
