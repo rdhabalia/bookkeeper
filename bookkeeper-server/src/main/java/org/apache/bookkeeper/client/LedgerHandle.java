@@ -1075,6 +1075,15 @@ public class LedgerHandle {
                 if (!metadata.currentEnsemble.get(ensembleInfo.bookieIndex)
                         .equals(ensembleInfo.addr)) {
                     return updateMetadataIfPossible(newMeta);
+                } else {
+                    // it happens when ensemble has multiple concurrent failed bookie change. eg: ensemble [b1,b2]
+                    // First failed bookie [b1] has updated metadata successfully and concurrent second failed bookie
+                    // [b2] call saw conflict zk-metadata version and failed. so, current metadata still has failed
+                    // second bookie [b2] in ensebleInfo. in this case, handle failed bookie by retrying to replace it
+                    // again.
+                    blockAddCompletions.decrementAndGet();
+                    handleBookieFailure(ensembleInfo.addr, ensembleInfo.bookieIndex);
+                    return true;
                 }
             } else {
                 ensembleChangeCounter.inc();
@@ -1082,8 +1091,8 @@ public class LedgerHandle {
                 // the failed bookie has been replaced
                 blockAddCompletions.decrementAndGet();
                 unsetSuccessAndSendWriteRequest(ensembleInfo.bookieIndex);
+                return true;
             }
-            return true;
         }
 
         private boolean updateMetadataIfPossible(LedgerMetadata newMeta) {
