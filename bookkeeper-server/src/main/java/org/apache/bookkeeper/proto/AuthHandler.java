@@ -91,39 +91,33 @@ class AuthHandler {
                 BookieProtocol.AuthRequest req = (BookieProtocol.AuthRequest) msg;
                 assert (req.getOpCode() == BookieProtocol.AUTH);
                 if (checkAuthPlugin(req.getAuthMessage(), ctx.channel())) {
-                    byte[] payload = req
-                        .getAuthMessage()
-                        .getPayload()
-                        .toByteArray();
-                    authProvider.process(AuthToken.wrap(payload),
+                    byte[] payload = req.getAuthMessage().getPayload().toByteArray();
+                    if (req.getAuthMessage().hasPayload()) {
+                        authProvider.process(AuthToken.wrap(payload),
                                 new AuthResponseCallbackLegacy(req, ctx.channel()));
+                    } else {
+                        authProvider.process(req.getAuthMessage(),
+                                new AuthResponseCallbackLegacyV1(req, ctx.channel()));
+                    }
                 } else {
                     ctx.channel().close();
                 }
             } else if (msg instanceof BookieProtocol.Request) {
                 BookieProtocol.Request req = (BookieProtocol.Request) msg;
                 if (req.getOpCode() == BookieProtocol.ADDENTRY) {
-                    ctx.channel().writeAndFlush(
-                            BookieProtocol.AddResponse.create(
-                                    req.getProtocolVersion(), BookieProtocol.EUA,
-                                    req.getLedgerId(), req.getEntryId()));
+                    ctx.channel().writeAndFlush(BookieProtocol.AddResponse.create(req.getProtocolVersion(),
+                            BookieProtocol.EUA, req.getLedgerId(), req.getEntryId()));
                 } else if (req.getOpCode() == BookieProtocol.READENTRY) {
-                    ctx.channel().writeAndFlush(
-                            new BookieProtocol.ReadResponse(
-                                    req.getProtocolVersion(), BookieProtocol.EUA,
-                                    req.getLedgerId(), req.getEntryId()));
+                    ctx.channel().writeAndFlush(new BookieProtocol.ReadResponse(req.getProtocolVersion(),
+                            BookieProtocol.EUA, req.getLedgerId(), req.getEntryId()));
                 } else {
                     ctx.channel().close();
                 }
             } else if (msg instanceof BookkeeperProtocol.Request) { // post-PB-client
                 BookkeeperProtocol.Request req = (BookkeeperProtocol.Request) msg;
-                if (req.getHeader().getOperation() == BookkeeperProtocol.OperationType.AUTH
-                        && req.hasAuthRequest()
+                if (req.getHeader().getOperation() == BookkeeperProtocol.OperationType.AUTH && req.hasAuthRequest()
                         && checkAuthPlugin(req.getAuthRequest(), ctx.channel())) {
-                    byte[] payload = req
-                        .getAuthRequest()
-                        .getPayload()
-                        .toByteArray();
+                    byte[] payload = req.getAuthRequest().getPayload().toByteArray();
                     authProvider.process(AuthToken.wrap(payload),
                             new AuthResponseCallback(req, ctx.channel(), authProviderFactory.getPluginName()));
                 } else if (req.getHeader().getOperation() == BookkeeperProtocol.OperationType.START_TLS
@@ -131,8 +125,7 @@ class AuthHandler {
                     super.channelRead(ctx, msg);
                 } else {
                     BookkeeperProtocol.Response.Builder builder = BookkeeperProtocol.Response.newBuilder()
-                        .setHeader(req.getHeader())
-                        .setStatus(BookkeeperProtocol.StatusCode.EUA);
+                            .setHeader(req.getHeader()).setStatus(BookkeeperProtocol.StatusCode.EUA);
 
                     ctx.channel().writeAndFlush(builder.build());
                 }
@@ -169,6 +162,25 @@ class AuthHandler {
                 AuthMessage message = AuthMessage.newBuilder().setAuthPluginName(req.authMessage.getAuthPluginName())
                         .setPayload(ByteString.copyFrom(newam.getData())).build();
                 channel.writeAndFlush(new BookieProtocol.AuthResponse(req.getProtocolVersion(), message));
+            }
+        }
+
+        static class AuthResponseCallbackLegacyV1 implements AuthCallbacks.GenericCallback<AuthMessage> {
+            final BookieProtocol.AuthRequest req;
+            final Channel channel;
+
+            AuthResponseCallbackLegacyV1(BookieProtocol.AuthRequest req, Channel channel) {
+                this.req = req;
+                this.channel = channel;
+            }
+
+            public void operationComplete(int rc, AuthMessage newam) {
+                if (rc != BKException.Code.OK) {
+                    LOG.error("Error processing auth message, closing connection");
+                    channel.close();
+                    return;
+                }
+                channel.writeAndFlush(new BookieProtocol.AuthResponse(req.getProtocolVersion(), newam));
             }
         }
 
@@ -276,23 +288,24 @@ class AuthHandler {
                         } else {
                             assert (resp.hasAuthResponse());
                             BookkeeperProtocol.AuthMessage am = resp.getAuthResponse();
-                            if (AUTHENTICATION_DISABLED_PLUGIN_NAME.equals(am.getAuthPluginName())){
+                            if (AUTHENTICATION_DISABLED_PLUGIN_NAME.equals(am.getAuthPluginName())) {
                                 SocketAddress remote = ctx.channel().remoteAddress();
-                                LOG.info("Authentication is not enabled."
-                                    + "Considering this client {0} authenticated", remote);
+                                LOG.info("Authentication is not enabled." + "Considering this client {0} authenticated",
+                                        remote);
                                 AuthHandshakeCompleteCallback cb = new AuthHandshakeCompleteCallback(ctx);
                                 cb.operationComplete(BKException.Code.OK, null);
                                 return;
                             }
                             byte[] payload = am.getPayload().toByteArray();
-                            authProvider.process(AuthToken.wrap(payload), new AuthRequestCallback(ctx,
-                                authProviderFactory.getPluginName()));
+                            authProvider.process(AuthToken.wrap(payload),
+                                    new AuthRequestCallback(ctx, authProviderFactory.getPluginName()));
                         }
                         break;
                     default:
                         LOG.warn("dropping received message {} from bookie {}", msg, ctx.channel());
                         // else just drop the message,
-                        // we're not authenticated so nothing should be coming through
+                        // we're not authenticated so nothing should be coming
+                        // through
                         break;
                     }
                 }
@@ -308,9 +321,8 @@ class AuthHandler {
                 } else if (msg instanceof BookkeeperProtocol.Request) {
                     // let auth messages through, queue the rest
                     BookkeeperProtocol.Request req = (BookkeeperProtocol.Request) msg;
-                    if (req.getHeader().getOperation()
-                            == BookkeeperProtocol.OperationType.AUTH
-                        || req.getHeader().getOperation() == BookkeeperProtocol.OperationType.START_TLS) {
+                    if (req.getHeader().getOperation() == BookkeeperProtocol.OperationType.AUTH
+                            || req.getHeader().getOperation() == BookkeeperProtocol.OperationType.START_TLS) {
                         super.write(ctx, msg, promise);
                         super.flush(ctx);
                     } else {
