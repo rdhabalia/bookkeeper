@@ -32,6 +32,7 @@ import java.net.SocketAddress;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.bookkeeper.auth.AuthToken;
 
 import org.apache.bookkeeper.auth.BookieAuthProvider;
 import org.apache.bookkeeper.auth.ClientAuthProvider;
@@ -40,6 +41,8 @@ import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperProtocol.AuthMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.protobuf.ByteString;
 
 class AuthHandler {
     static final Logger LOG = LoggerFactory.getLogger(AuthHandler.class);
@@ -84,8 +87,14 @@ class AuthHandler {
                 BookieProtocol.AuthRequest req = (BookieProtocol.AuthRequest) msg;
                 assert (req.getOpCode() == BookieProtocol.AUTH);
                 if (checkAuthPlugin(req.getAuthMessage(), ctx.channel())) {
-                    authProvider.process(req.getAuthMessage(),
+                    if (req.getAuthMessage().hasPayload()) {
+                        byte[] payload = req.getAuthMessage().getPayload().toByteArray();
+                        authProvider.process(AuthToken.wrap(payload),
+                                new AuthResponseCallbackLegacyV2(req, ctx.channel()));
+                    } else {
+                        authProvider.process(req.getAuthMessage(),
                                 new AuthResponseCallbackLegacy(req, ctx.channel()));
+                    }
                 } else {
                     ctx.channel().close();
                 }
@@ -109,8 +118,13 @@ class AuthHandler {
                 if (req.getHeader().getOperation() == BookkeeperProtocol.OperationType.AUTH
                         && req.hasAuthRequest()
                         && checkAuthPlugin(req.getAuthRequest(), ctx.channel())) {
-                    authProvider.process(req.getAuthRequest(),
-                                         new AuthResponseCallback(req, ctx.channel()));
+                    if (req.getAuthRequest().hasPayload()) {
+                        byte[] payload = req.getAuthRequest().getPayload().toByteArray();
+                        authProvider.process(AuthToken.wrap(payload),
+                                new AuthResponseCallbackV2(req, ctx.channel(), authProviderFactory.getPluginName()));
+                    } else {
+                        authProvider.process(req.getAuthRequest(), new AuthResponseCallback(req, ctx.channel()));
+                    }
                 } else {
                     BookkeeperProtocol.Response.Builder builder
                         = BookkeeperProtocol.Response.newBuilder()
@@ -155,6 +169,27 @@ class AuthHandler {
             }
         }
 
+        static class AuthResponseCallbackLegacyV2 implements GenericCallback<AuthToken> {
+            final BookieProtocol.AuthRequest req;
+            final Channel channel;
+
+            AuthResponseCallbackLegacyV2(BookieProtocol.AuthRequest req, Channel channel) {
+                this.req = req;
+                this.channel = channel;
+            }
+
+            public void operationComplete(int rc, AuthToken newam) {
+                if (rc != BKException.Code.OK) {
+                    LOG.error("Error processing auth message, closing connection");
+                    channel.close();
+                    return;
+                }
+                AuthMessage message = AuthMessage.newBuilder().setAuthPluginName(req.authMessage.getAuthPluginName())
+                        .setPayload(ByteString.copyFrom(newam.getData())).build();
+                channel.writeAndFlush(new BookieProtocol.AuthResponse(req.getProtocolVersion(), message));
+            }
+        }
+
         static class AuthResponseCallback implements GenericCallback<AuthMessage> {
             final BookkeeperProtocol.Request req;
             final Channel channel;
@@ -179,6 +214,37 @@ class AuthHandler {
                 } else {
                     builder.setStatus(BookkeeperProtocol.StatusCode.EOK)
                         .setAuthResponse(newam);
+                    channel.writeAndFlush(builder.build());
+                }
+            }
+        }
+
+        static class AuthResponseCallbackV2 implements GenericCallback<AuthToken> {
+            final BookkeeperProtocol.Request req;
+            final Channel channel;
+            final String pluginName;
+
+            AuthResponseCallbackV2(BookkeeperProtocol.Request req, Channel channel, String pluginName) {
+                this.req = req;
+                this.channel = channel;
+                this.pluginName = pluginName;
+            }
+
+            public void operationComplete(int rc, AuthToken newam) {
+                BookkeeperProtocol.Response.Builder builder = BookkeeperProtocol.Response.newBuilder()
+                        .setHeader(req.getHeader());
+
+                if (rc != BKException.Code.OK) {
+                    LOG.error("Error processing auth message, closing connection");
+
+                    builder.setStatus(BookkeeperProtocol.StatusCode.EUA);
+                    channel.writeAndFlush(builder.build());
+                    channel.close();
+                    return;
+                } else {
+                    AuthMessage message = AuthMessage.newBuilder().setAuthPluginName(pluginName)
+                            .setPayload(ByteString.copyFrom(newam.getData())).build();
+                    builder.setStatus(BookkeeperProtocol.StatusCode.EOK).setAuthResponse(message);
                     channel.writeAndFlush(builder.build());
                 }
             }

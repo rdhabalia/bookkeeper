@@ -23,6 +23,7 @@ package org.apache.bookkeeper.auth;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 
+import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperProtocol.AuthMessage;
@@ -71,6 +72,16 @@ public interface BookieAuthProvider {
          * are using the same auth provider.
          */
         String getPluginName();
+    }
+
+    /**
+     * Process a request from the client. cb will receive the next
+     * message to be sent to the client. If there are no more messages
+     * to send to the client, cb should not be called, and completeCb
+     * must be called instead.
+     */
+    default void process(AuthToken m, GenericCallback<AuthToken> cb) {
+        cb.operationComplete(BKException.Code.UnauthorizedAccessException, null);
     }
 
     /**

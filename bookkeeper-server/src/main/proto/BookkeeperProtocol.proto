@@ -132,5 +132,6 @@ message AddResponse {
  */
 message AuthMessage {
     required string authPluginName = 1;
+    optional bytes payload = 2;
     extensions 1000 to max;
 }
