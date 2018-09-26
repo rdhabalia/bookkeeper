@@ -48,6 +48,13 @@
   </properties>
   <url>http://zookeeper.apache.org/bookkeeper</url>
   <build>
+  	<extensions>
+      <extension>
+        <groupId>org.apache.maven.wagon</groupId>
+        <artifactId>wagon-ssh-external</artifactId>
+        <version>2.10</version>
+      </extension>
+    </extensions>
     <plugins>
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
