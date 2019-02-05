@@ -55,6 +55,7 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
     protected static final String GC_OVERREPLICATED_LEDGER_WAIT_TIME = "gcOverreplicatedLedgerWaitTime";
     protected static final String USE_TRANSACTIONAL_COMPACTION = "useTransactionalCompaction";
     protected static final String VERIFY_METADATA_ON_GC = "verifyMetadataOnGC";
+    protected static final String MAX_ENTRY_LOGGER_SCAN_ON_GC = "maxEntryLoggerScanOnGc";
     // Sync Parameters
     protected static final String FLUSH_INTERVAL = "flushInterval";
     protected static final String FLUSH_ENTRYLOG_INTERVAL_BYTES = "flushEntrylogBytes";
@@ -334,6 +335,24 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      */
     public ServerConfiguration setVerifyMetadataOnGc(boolean verifyMetadataOnGC) {
         this.setProperty(VERIFY_METADATA_ON_GC, verifyMetadataOnGC);
+        return this;
+    }
+
+    /**
+     * Get Max entry-logger file must be scanned while doing gc
+     *
+     */
+    public int getMaxEntryLoggerScanOnGc() {
+        return this.getInt(MAX_ENTRY_LOGGER_SCAN_ON_GC, 100);
+    }
+
+    /**
+     * Set Max entry-logger file must be scanned while doing gc
+     *
+     * @return use transactional compaction
+     */
+    public ServerConfiguration setMaxEntryLoggerScanOnGc(int maxEntryLoggerForScan) {
+        this.setProperty(MAX_ENTRY_LOGGER_SCAN_ON_GC, maxEntryLoggerForScan);
         return this;
     }
 
