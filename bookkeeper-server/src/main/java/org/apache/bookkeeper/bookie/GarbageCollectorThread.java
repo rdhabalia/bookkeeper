@@ -570,7 +570,7 @@ public class GarbageCollectorThread extends SafeRunnable {
                 lastIterationLogId = entryLogId;
                 moreEntryLoggers = true;
                 LOG.info("Reached max-entry-logger {}, so will be perform gc in next iteration starts from {}",
-                        entryLogFileCount, maxEntryLoggersPerScan, scannedLogId);
+                        entryLogFileCount, maxEntryLoggersPerScan, entryLogId);
                 break;
             }
             // Comb the current entry log file if it has not already been extracted.

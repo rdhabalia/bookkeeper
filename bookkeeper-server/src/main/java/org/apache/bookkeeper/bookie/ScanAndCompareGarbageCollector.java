@@ -135,6 +135,8 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
             return;
         }
 
+        long startTime = System.currentTimeMillis();
+        LOG.info("starting gc - zk traversing");
         try {
             // Get a set of all ledgers on the bookie
             NavigableSet<Long> bkActiveLedgers = Sets.newTreeSet(ledgerStorage.getActiveLedgersInRange(0,
@@ -217,6 +219,8 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
             // ignore exception, collecting garbage next time
             LOG.warn("Exception when iterating over the metadata {}", t);
         } finally {
+            long endTime = System.currentTimeMillis();
+            LOG.info("Total GC time {}", TimeUnit.MILLISECONDS.toSeconds(endTime - startTime));
             if (zk != null) {
                 try {
                     zk.close();
