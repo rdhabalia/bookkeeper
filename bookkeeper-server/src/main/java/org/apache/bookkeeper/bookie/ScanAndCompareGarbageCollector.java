@@ -34,6 +34,7 @@ import java.util.SortedMap;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.LedgerMetadata;
@@ -129,23 +130,24 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
     @Override
     public void gc(GarbageCleaner garbageCleaner) {
         if (null == ledgerManager) {
-            // if ledger manager is null, the bookie is not started to connect to metadata store.
+            // if ledger manager is null, the bookie is not started to connect
+            // to metadata store.
             // so skip garbage collection
             return;
         }
 
         try {
             // Get a set of all ledgers on the bookie
-            NavigableSet<Long> bkActiveLedgers = Sets.newTreeSet(ledgerStorage.getActiveLedgersInRange(0,
-                    Long.MAX_VALUE));
+            NavigableSet<Long> bkActiveLedgers = Sets
+                    .newTreeSet(ledgerStorage.getActiveLedgersInRange(0, Long.MAX_VALUE));
             this.activeLedgerCounter = bkActiveLedgers.size();
 
             long curTime = MathUtils.now();
-            boolean checkOverreplicatedLedgers = (enableGcOverReplicatedLedger && curTime
-                    - lastOverReplicatedLedgerGcTimeMillis > gcOverReplicatedLedgerIntervalMillis);
+            boolean checkOverreplicatedLedgers = (enableGcOverReplicatedLedger
+                    && curTime - lastOverReplicatedLedgerGcTimeMillis > gcOverReplicatedLedgerIntervalMillis);
             if (checkOverreplicatedLedgers) {
-                zk = ZooKeeperClient.newBuilder().connectString(zkServers)
-                        .sessionTimeoutMs(conf.getZkTimeout()).build();
+                zk = ZooKeeperClient.newBuilder().connectString(zkServers).sessionTimeoutMs(conf.getZkTimeout())
+                        .build();
                 // remove all the overreplicated ledgers from the local bookie
                 Set<Long> overReplicatedLedgers = removeOverReplicatedledgers(bkActiveLedgers, garbageCleaner);
                 if (overReplicatedLedgers.isEmpty()) {
@@ -188,14 +190,22 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                                 metaRC.set(rc);
                                 latch.countDown();
                             });
-                            latch.await();
-                            if (metaRC.get() != BKException.Code.NoSuchLedgerExistsException) {
-                                LOG.warn(
-                                        "Ledger {} Missing in metadata list, but ledgerManager returned rc: {}.",
-                                        bkLid,
-                                        metaRC.get());
+                            boolean timeout = false;
+                            try {
+                                latch.await(2, TimeUnit.SECONDS);
+                            } catch (Exception e) {
+                                timeout = true;
+                                LOG.warn("Failed to check zk metadata {}", e.getMessage());
+                            }
+
+                            if (timeout || metaRC.get() != BKException.Code.NoSuchLedgerExistsException) {
+                                LOG.warn("Ledger {} Missing in metadata list, but ledgerManager returned rc: {}.",
+                                        bkLid, metaRC.get());
                                 continue;
                             }
+                        }
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("Deleting bkLid {}", bkLid);
                         }
                         deletedLedgerCounter.inc();
                         garbageCleaner.clean(bkLid);
