@@ -20,6 +20,7 @@ package org.apache.bookkeeper.proto.checksum;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
+import io.netty.util.ReferenceCountUtil;
 
 import java.security.GeneralSecurityException;
 
@@ -127,6 +128,8 @@ public abstract class DigestManager {
             populateValueAndReset(sendBuffer);
 
             sendBuffer.writeBytes(data, data.readerIndex(), data.readableBytes());
+            // decrease ref count which has been retain by asyncAddEntry
+            ReferenceCountUtil.release(data);
 
             return ByteBufList.get(sendBuffer);
         }
