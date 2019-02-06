@@ -34,6 +34,7 @@ import java.util.SortedMap;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.LedgerMetadata;
@@ -188,14 +189,24 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                                 metaRC.set(rc);
                                 latch.countDown();
                             });
-                            latch.await();
-                            if (metaRC.get() != BKException.Code.NoSuchLedgerExistsException) {
+                            boolean timeout = false;
+                            try {
+                                latch.await(2, TimeUnit.SECONDS);
+                            } catch (Exception e) {
+                                timeout = true;
+                                LOG.warn("Failed to check zk metadata {}", e.getMessage());
+                            }
+                            
+                            if (timeout || metaRC.get() != BKException.Code.NoSuchLedgerExistsException) {
                                 LOG.warn(
                                         "Ledger {} Missing in metadata list, but ledgerManager returned rc: {}.",
                                         bkLid,
                                         metaRC.get());
                                 continue;
                             }
+                        }
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("Deleting bkLid {}", bkLid);
                         }
                         deletedLedgerCounter.inc();
                         garbageCleaner.clean(bkLid);

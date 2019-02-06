@@ -113,6 +113,7 @@ public class GarbageCollectorThread extends SafeRunnable {
 
     // track the last scanned successfully log id
     long scannedLogId = 0;
+    long lastIterationLogId = 0;
     boolean moreEntryLoggers = true;
     private final boolean verifyMetadataOnGc;
 
@@ -347,7 +348,8 @@ public class GarbageCollectorThread extends SafeRunnable {
 
     public void runWithFlags(boolean force, boolean suspendMajor, boolean suspendMinor) {
         
-        LOG.info("Garbage collector starting with max-entry-logger scan {}", maxEntryLoggersPerScan);
+        LOG.info("Garbage collector starting with max-entry-logger scan {} and verify-zk {}", maxEntryLoggersPerScan,
+                verifyMetadataOnGc);
         
         long threadStart = MathUtils.nowInNano();
         if (force) {
@@ -356,11 +358,12 @@ public class GarbageCollectorThread extends SafeRunnable {
         // Recover and clean up previous state if using transactional compaction
         compactor.cleanUpAndRecover();
 
+        boolean isIteration = false;
         do {
             // Extract all of the ledger ID's that comprise all of the entry
             // logs
             // (except for the current new one which is still being written to).
-            entryLogMetaMap = extractMetaFromEntryLogs(entryLogMetaMap);
+            entryLogMetaMap = extractMetaFromEntryLogs(entryLogMetaMap, isIteration);
 
             // gc inactive/deleted ledgers
             doGcLedgers();
@@ -394,6 +397,7 @@ public class GarbageCollectorThread extends SafeRunnable {
                 minorCompactionCounter.inc();
             }
             this.gcThreadRuntime.registerSuccessfulEvent(MathUtils.nowInNano() - threadStart, TimeUnit.NANOSECONDS);
+            isIteration = true;
         } while (moreEntryLoggers);
         
         LOG.info("GC process completed");
@@ -552,7 +556,7 @@ public class GarbageCollectorThread extends SafeRunnable {
      *          Existing EntryLogs to Meta
      * @throws IOException
      */
-    protected Map<Long, EntryLogMetadata> extractMetaFromEntryLogs(Map<Long, EntryLogMetadata> entryLogMetaMap) {
+    protected Map<Long, EntryLogMetadata> extractMetaFromEntryLogs(Map<Long, EntryLogMetadata> entryLogMetaMap, boolean isIteration) {
         moreEntryLoggers = false;
         // Extract it for every entry log except for the current one.
         // Entry Log ID's are just a long value that starts at 0 and increments
@@ -560,11 +564,13 @@ public class GarbageCollectorThread extends SafeRunnable {
         long curLogId = entryLogger.getLeastUnflushedLogId();
         boolean hasExceptionWhenScan = false;
         int entryLogFileCount = 0;
-        for (long entryLogId = scannedLogId; entryLogId < curLogId; entryLogId++, entryLogFileCount++) {
+        long entryLogId = isIteration ? lastIterationLogId : scannedLogId;
+        for (; entryLogId < curLogId; entryLogId++, entryLogFileCount++) {
             if (entryLogFileCount > maxEntryLoggersPerScan && verifyMetadataOnGc) {
+                lastIterationLogId = entryLogId;
                 moreEntryLoggers = true;
-                LOG.info("Reached max-entry-logger {}, so will be perform gc in next iteration",
-                        maxEntryLoggersPerScan);
+                LOG.info("Reached max-entry-logger {}, so will be perform gc in next iteration starts from {}",
+                        entryLogFileCount, maxEntryLoggersPerScan, scannedLogId);
                 break;
             }
             // Comb the current entry log file if it has not already been extracted.
@@ -575,6 +581,7 @@ public class GarbageCollectorThread extends SafeRunnable {
             // check whether log file exists or not
             // if it doesn't exist, this log file might have been garbage collected.
             if (!entryLogger.logExists(entryLogId)) {
+                entryLogFileCount--;
                 continue;
             }
 
