@@ -777,7 +777,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
                     throw new RuntimeException("Unsupported op");
                 }
                 @Override
-                public LedgerRangeIterator getLedgerRanges() {
+                public LedgerRangeIterator getLedgerRanges(long zkOpTimeoutSec) {
                     final AtomicBoolean hasnext = new AtomicBoolean(true);
                     return new LedgerManager.LedgerRangeIterator() {
                         @Override

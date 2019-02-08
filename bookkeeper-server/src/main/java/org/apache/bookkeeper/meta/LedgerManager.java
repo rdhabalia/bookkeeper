@@ -152,7 +152,7 @@ public interface LedgerManager extends Closeable {
      *
      * @return will return a iterator of the Ranges
      */
-    LedgerRangeIterator getLedgerRanges();
+    LedgerRangeIterator getLedgerRanges(long zkOpTimeOutSec);
 
     /**
      * Used to represent the Ledgers range returned from the

@@ -959,7 +959,7 @@ public class BookieShell implements Tool {
         public int runCmd(CommandLine cmdLine) throws Exception {
             runFunctionWithLedgerManagerFactory(bkConf, mFactory -> {
                 try (LedgerManager m = mFactory.newLedgerManager()) {
-                    LedgerRangeIterator iter = m.getLedgerRanges();
+                    LedgerRangeIterator iter = m.getLedgerRanges(0);
                     if (cmdLine.hasOption("m")) {
                         List<ReadMetadataCallback> futures = new ArrayList<ReadMetadataCallback>(LIST_BATCH_SIZE);
                         while (iter.hasNext()) {
