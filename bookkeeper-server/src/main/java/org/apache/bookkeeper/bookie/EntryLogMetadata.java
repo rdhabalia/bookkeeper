@@ -21,12 +21,16 @@
 
 package org.apache.bookkeeper.bookie;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
 import java.util.function.LongPredicate;
 
 import org.apache.bookkeeper.util.collections.ConcurrentLongLongHashMap;
 
 /**
- * Records the total size, remaining size and the set of ledgers that comprise a entry log.
+ * Records the total size, remaining size and the set of ledgers that comprise a
+ * entry log.
  */
 public class EntryLogMetadata {
     private final long entryLogId;
@@ -96,4 +100,49 @@ public class EntryLogMetadata {
         return sb.toString();
     }
 
+    /**
+     * Serializes {@link EntryLogMetadata} and writes to
+     * {@link DataOutputStream}.
+     * 
+     * @param out
+     * @throws IOException
+     *             throws if it couldn't serialize metadata-fields
+     * @throws IllegalStateException
+     *             throws if it couldn't serialize ledger-map
+     */
+    public void serialize(DataOutputStream out) throws IOException, IllegalStateException {
+        out.writeLong(entryLogId);
+        out.writeLong(totalSize);
+        out.writeLong(remainingSize);
+        out.writeLong(ledgersMap.size());
+        ledgersMap.forEach((ledgerId, size) -> {
+            try {
+                out.writeLong(ledgerId);
+                out.writeLong(size);
+            } catch (IOException e) {
+                throw new IllegalStateException("Failed to serialize entryLogMetadata", e);
+            }
+        });
+        out.writeLong(remainingSize);
+    }
+
+    /**
+     * Deserializes {@link EntryLogMetadata} from given {@link DataInputStream}.
+     * 
+     * @param in
+     * @return
+     * @throws IOException
+     */
+    public static EntryLogMetadata deserialize(DataInputStream in) throws IOException {
+        EntryLogMetadata metadata = new EntryLogMetadata(in.readLong());
+        metadata.totalSize = in.readLong();
+        metadata.remainingSize = in.readLong();
+        long ledgersMapSize = in.readLong();
+        for (int i = 0; i < ledgersMapSize; i++) {
+            long ledgerId = in.readLong();
+            long entryId = in.readLong();
+            metadata.ledgersMap.put(ledgerId, entryId);
+        }
+        return metadata;
+    }
 }

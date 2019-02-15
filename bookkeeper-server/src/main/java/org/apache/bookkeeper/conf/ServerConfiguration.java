@@ -104,6 +104,7 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
     protected static final String GC_OVERREPLICATED_LEDGER_WAIT_TIME = "gcOverreplicatedLedgerWaitTime";
     protected static final String USE_TRANSACTIONAL_COMPACTION = "useTransactionalCompaction";
     protected static final String VERIFY_METADATA_ON_GC = "verifyMetadataOnGC";
+    protected static final String GC_PERSISTENT_ENTRYLOG_METADATA_MAP_ENABLED = "gcPersistentEntrylogMetadataMapEnabled";
     // Scrub Parameters
     protected static final String LOCAL_SCRUB_PERIOD = "localScrubInterval";
     protected static final String LOCAL_SCRUB_RATE_LIMIT = "localScrubRateLimit";
@@ -428,6 +429,29 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      */
     public ServerConfiguration setVerifyMetadataOnGc(boolean verifyMetadataOnGC) {
         this.setProperty(VERIFY_METADATA_ON_GC, verifyMetadataOnGC);
+        return this;
+    }
+
+    /**
+     * Get whether the bookie is configured to use persistent
+     * entrylogMetadataMap.
+     * 
+     * @return
+     */
+    public boolean isGcPersistentEntrylogMetadataMapEnabled() {
+        return this.getBoolean(GC_PERSISTENT_ENTRYLOG_METADATA_MAP_ENABLED, true);
+    }
+
+    /**
+     * Set whether the bookie is configured to use persistent
+     * entrylogMetadataMap.
+     * 
+     * @param gcPersistentEntrylogMetadataMapEnabled
+     * @return server configuration
+     */
+    public ServerConfiguration setGcPersistentEntrylogMetadataMapEnabled(
+            boolean gcPersistentEntrylogMetadataMapEnabled) {
+        this.setProperty(GC_PERSISTENT_ENTRYLOG_METADATA_MAP_ENABLED, gcPersistentEntrylogMetadataMapEnabled);
         return this;
     }
 

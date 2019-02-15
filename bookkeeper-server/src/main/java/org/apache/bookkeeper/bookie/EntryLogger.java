@@ -1193,7 +1193,7 @@ public class EntryLogger {
         entryLoggerAllocator.stop();
     }
 
-    protected LedgerDirsManager getLedgerDirsManager() {
+    public LedgerDirsManager getLedgerDirsManager() {
         return ledgerDirsManager;
     }
 
