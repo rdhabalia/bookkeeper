@@ -193,6 +193,7 @@ public class BookieShell implements Tool {
     static final String CMD_DECOMMISSIONBOOKIE = "decommissionbookie";
     static final String CMD_LOSTBOOKIERECOVERYDELAY = "lostbookierecoverydelay";
     static final String CMD_TRIGGERAUDIT = "triggeraudit";
+    static final String CMD_TRIGGERGC = "triggergc";
     static final String CMD_CONVERT_TO_DB_STORAGE = "convert-to-db-storage";
     static final String CMD_CONVERT_TO_INTERLEAVED_STORAGE = "convert-to-interleaved-storage";
     static final String CMD_REBUILD_DB_LEDGER_LOCATIONS_INDEX = "rebuild-db-ledger-locations-index";
@@ -2623,6 +2624,46 @@ public class BookieShell implements Tool {
     }
 
     /**
+     * Command to trigger GC-Task
+     */
+    class TriggerGCCmd extends MyCommand {
+        Options opts = new Options();
+
+        TriggerGCCmd() {
+            super(CMD_TRIGGERGC);
+        }
+
+        @Override
+        String getDescription() {
+            return "Force trigger the GC task.";
+        }
+
+        @Override
+        String getUsage() {
+            return CMD_TRIGGERGC;
+        }
+
+        @Override
+        Options getOptions() {
+            return opts;
+        }
+
+        @Override
+        public int runCmd(CommandLine cmdLine) throws Exception {
+            ClientConfiguration adminConf = new ClientConfiguration(bkConf);
+            BookKeeperAdmin admin = new BookKeeperAdmin(adminConf);
+            try {
+                admin.triggerAudit();
+            } finally {
+                if (admin != null) {
+                    admin.close();
+                }
+            }
+            return 0;
+        }
+    }
+
+    /**
      * Command to trigger AuditTask by resetting lostBookieRecoveryDelay and
      * then make sure the ledgers stored in the bookie are properly replicated
      * and Cookie of the decommissioned bookie should be deleted from metadata
@@ -3016,6 +3057,7 @@ public class BookieShell implements Tool {
         commands.put(CMD_HELP, new HelpCmd());
         commands.put(CMD_LOSTBOOKIERECOVERYDELAY, new LostBookieRecoveryDelayCmd());
         commands.put(CMD_TRIGGERAUDIT, new TriggerAuditCmd());
+        commands.put(CMD_TRIGGERGC, new TriggerGCCmd());
         // cookie related commands
         commands.put(CMD_CREATE_COOKIE,
             new CreateCookieCommand().asShellCommand(CMD_CREATE_COOKIE, bkConf));
