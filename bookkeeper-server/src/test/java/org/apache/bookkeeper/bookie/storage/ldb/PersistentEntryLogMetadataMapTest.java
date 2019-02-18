@@ -24,17 +24,15 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import com.google.common.collect.Lists;
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 import org.apache.bookkeeper.bookie.EntryLogMetadata;
 import org.apache.bookkeeper.conf.ServerConfiguration;
-import org.apache.commons.io.FileUtils;
+import org.junit.Rule;
 import org.junit.Test;
-
-import com.google.common.collect.Lists;
+import org.junit.rules.TemporaryFolder;
 
 /**
  * Unit test for {@link PersistentEntryLogMetadataMap}.
@@ -43,101 +41,96 @@ public class PersistentEntryLogMetadataMapTest {
 
     private final ServerConfiguration configuration;
 
+    @Rule
+    public TemporaryFolder tempFolder = new TemporaryFolder();
+
     public PersistentEntryLogMetadataMapTest() {
         this.configuration = new ServerConfiguration();
     }
 
     /**
      * Validates PersistentEntryLogMetadataMap functionalities.
-     * 
+     *
      * @throws Exception
      */
     @Test
     public void simple() throws Exception {
-        Path tmpDir = Files.createTempDirectory("bookie");
-        String path = tmpDir.toAbsolutePath().toString();
-        try {
-            PersistentEntryLogMetadataMap entryMetadataMap = new PersistentEntryLogMetadataMap(path, configuration);
+        File tmpDir = tempFolder.newFolder();
+        String path = tmpDir.getAbsolutePath().toString();
+        PersistentEntryLogMetadataMap entryMetadataMap = new PersistentEntryLogMetadataMap(path, configuration);
 
-            List<EntryLogMetadata> metadatas = Lists.newArrayList();
-            int totalMetadata = 1000;
-            // insert entry-log-metadata records
-            for (int i = 1; i <= totalMetadata; i++) {
-                EntryLogMetadata entryLogMeta = createEntryLogMetadata(i, i);
-                metadatas.add(entryLogMeta);
-                entryMetadataMap.put(i, entryLogMeta);
-            }
-            for (int i = 1; i <= totalMetadata; i++) {
-                assertTrue(entryMetadataMap.containsKey(i));
-            }
-
-            assertEquals(entryMetadataMap.size(), totalMetadata);
-
-            entryMetadataMap.forEach((logId, metadata) -> {
-                assertEquals(metadatas.get(logId.intValue() - 1).getTotalSize(), metadata.getTotalSize());
-                for (int i = 0; i < logId.intValue(); i++) {
-                    assertTrue(metadata.containsLedger(i));
-                }
-            });
-
-            // remove entry-log entry
-            for (int i = 1; i <= totalMetadata; i++) {
-                entryMetadataMap.remove(i);
-            }
-
-            // entries should not be present into map
-            for (int i = 1; i <= totalMetadata; i++) {
-                assertFalse(entryMetadataMap.containsKey(i));
-            }
-
-            assertEquals(entryMetadataMap.size(), 0);
-
-            entryMetadataMap.close();
-        } finally {
-            FileUtils.deleteDirectory(new File(tmpDir.toAbsolutePath().toString()));
+        List<EntryLogMetadata> metadatas = Lists.newArrayList();
+        int totalMetadata = 1000;
+        // insert entry-log-metadata records
+        for (int i = 1; i <= totalMetadata; i++) {
+            EntryLogMetadata entryLogMeta = createEntryLogMetadata(i, i);
+            metadatas.add(entryLogMeta);
+            entryMetadataMap.put(i, entryLogMeta);
         }
+        for (int i = 1; i <= totalMetadata; i++) {
+            assertTrue(entryMetadataMap.containsKey(i));
+        }
+
+        assertEquals(entryMetadataMap.size(), totalMetadata);
+
+        entryMetadataMap.forEach((logId, metadata) -> {
+            assertEquals(metadatas.get(logId.intValue() - 1).getTotalSize(), metadata.getTotalSize());
+            for (int i = 0; i < logId.intValue(); i++) {
+                assertTrue(metadata.containsLedger(i));
+            }
+        });
+
+        // remove entry-log entry
+        for (int i = 1; i <= totalMetadata; i++) {
+            entryMetadataMap.remove(i);
+        }
+
+        // entries should not be present into map
+        for (int i = 1; i <= totalMetadata; i++) {
+            assertFalse(entryMetadataMap.containsKey(i));
+        }
+
+        assertEquals(entryMetadataMap.size(), 0);
+
+        entryMetadataMap.close();
     }
 
     /**
      * Validates PersistentEntryLogMetadataMap persists metadata state in
      * rocksDB.
-     * 
+     *
      * @throws Exception
      */
     @Test
     public void closeAndOpen() throws Exception {
-        Path tmpDir = Files.createTempDirectory("bookie");
-        String path = tmpDir.toAbsolutePath().toString();
-        try {
-            PersistentEntryLogMetadataMap entryMetadataMap = new PersistentEntryLogMetadataMap(path, configuration);
+        File tmpDir = tempFolder.newFolder();
+        String path = tmpDir.getAbsolutePath().toString();
+        PersistentEntryLogMetadataMap entryMetadataMap = new PersistentEntryLogMetadataMap(path, configuration);
 
-            List<EntryLogMetadata> metadatas = Lists.newArrayList();
-            int totalMetadata = 1000;
-            for (int i = 1; i <= totalMetadata; i++) {
-                EntryLogMetadata entryLogMeta = createEntryLogMetadata(i, i);
-                metadatas.add(entryLogMeta);
-                entryMetadataMap.put(i, entryLogMeta);
-            }
-            for (int i = 1; i <= totalMetadata; i++) {
-                assertTrue(entryMetadataMap.containsKey(i));
-            }
-
-            // close metadata-map
-            entryMetadataMap.close();
-            // Open it again
-            entryMetadataMap = new PersistentEntryLogMetadataMap(path, configuration);
-
-            entryMetadataMap.forEach((logId, metadata) -> {
-                assertEquals(metadatas.get(logId.intValue() - 1).getTotalSize(), logId.longValue());
-                for (int i = 0; i < logId.intValue(); i++) {
-                    assertTrue(metadata.containsLedger(i));
-                }
-            });
-
-            entryMetadataMap.close();
-        } finally {
-            FileUtils.deleteDirectory(new File(tmpDir.toAbsolutePath().toString()));
+        List<EntryLogMetadata> metadatas = Lists.newArrayList();
+        int totalMetadata = 1000;
+        for (int i = 1; i <= totalMetadata; i++) {
+            EntryLogMetadata entryLogMeta = createEntryLogMetadata(i, i);
+            metadatas.add(entryLogMeta);
+            entryMetadataMap.put(i, entryLogMeta);
         }
+        for (int i = 1; i <= totalMetadata; i++) {
+            assertTrue(entryMetadataMap.containsKey(i));
+        }
+
+        // close metadata-map
+        entryMetadataMap.close();
+        // Open it again
+        entryMetadataMap = new PersistentEntryLogMetadataMap(path, configuration);
+
+        entryMetadataMap.forEach((logId, metadata) -> {
+            assertEquals(metadatas.get(logId.intValue() - 1).getTotalSize(), logId.longValue());
+            for (int i = 0; i < logId.intValue(); i++) {
+                assertTrue(metadata.containsLedger(i));
+            }
+        });
+
+        entryMetadataMap.close();
     }
 
     private EntryLogMetadata createEntryLogMetadata(long logId, long totalLedgers) {

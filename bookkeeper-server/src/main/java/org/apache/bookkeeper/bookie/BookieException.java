@@ -65,6 +65,8 @@ public abstract class BookieException extends Exception {
             return new CookieNotFoundException();
         case Code.CookieExistsException:
             return new CookieExistException();
+        case Code.EntryLogMetadataMapException:
+            return new EntryLogMetadataMapException();
         case Code.MetadataStoreException:
             return new MetadataStoreException();
         case Code.UnknownBookieIdException:
@@ -91,6 +93,7 @@ public abstract class BookieException extends Exception {
         int UnknownBookieIdException = -107;
         int OperationRejectedException = -108;
         int CookieExistsException = -109;
+        int EntryLogMetadataMapException = -110;
     }
 
     public int getCode() {
@@ -123,6 +126,9 @@ public abstract class BookieException extends Exception {
             break;
         case Code.CookieExistsException:
             err = "Cookie already exists";
+            break;
+        case Code.EntryLogMetadataMapException:
+            err = "Error in accessing Entry-log metadata map";
             break;
         case Code.MetadataStoreException:
             err = "Error performing metadata operations";
@@ -251,6 +257,23 @@ public abstract class BookieException extends Exception {
 
         public CookieExistException(Throwable cause) {
             super(Code.CookieExistsException, cause);
+        }
+    }
+
+    /**
+     * Signal that error while accessing entry-log metadata map.
+     */
+    public static class EntryLogMetadataMapException extends BookieException {
+        public EntryLogMetadataMapException() {
+            this("");
+        }
+
+        public EntryLogMetadataMapException(String reason) {
+            super(Code.EntryLogMetadataMapException, reason);
+        }
+
+        public EntryLogMetadataMapException(Throwable cause) {
+            super(Code.EntryLogMetadataMapException, cause);
         }
     }
 

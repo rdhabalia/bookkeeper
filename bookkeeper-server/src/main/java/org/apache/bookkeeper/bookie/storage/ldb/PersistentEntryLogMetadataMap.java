@@ -20,6 +20,7 @@
  */
 package org.apache.bookkeeper.bookie.storage.ldb;
 
+import io.netty.util.concurrent.FastThreadLocal;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
@@ -27,25 +28,28 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.file.FileSystems;
 import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 
+import org.apache.bookkeeper.bookie.BookieException.EntryLogMetadataMapException;
 import org.apache.bookkeeper.bookie.EntryLogMetadata;
 import org.apache.bookkeeper.bookie.EntryLogMetadataMap;
 import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorage.CloseableIterator;
 import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageFactory.DbConfigType;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 
-import io.netty.util.concurrent.FastThreadLocal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Persistent entryLogMetadata-map that stores entry-loggers metadata into
- * rocksDB
- *
+ * rocksDB.
  */
 public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
-
+    private static final Logger LOG = LoggerFactory.getLogger(PersistentEntryLogMetadataMap.class);
     // persistent Rocksdb to store metadata-map
     private final KeyValueStorage metadataMapDB;
+    private AtomicBoolean isClosed = new AtomicBoolean(false);
 
     private static final FastThreadLocal<ByteArrayOutputStream> baos = new FastThreadLocal<ByteArrayOutputStream>() {
         @Override
@@ -78,10 +82,15 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
     }
 
     @Override
-    public boolean containsKey(long entryLogId) throws IOException {
+    public boolean containsKey(long entryLogId) throws EntryLogMetadataMapException {
         LongWrapper key = LongWrapper.get(entryLogId);
         try {
-            boolean isExist = metadataMapDB.get(key.array) != null;
+            boolean isExist;
+            try {
+                isExist = metadataMapDB.get(key.array) != null;
+            } catch (IOException e) {
+                throw new EntryLogMetadataMapException(e);
+            }
             return isExist;
         } finally {
             key.recycle();
@@ -89,13 +98,18 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
     }
 
     @Override
-    public void put(long entryLogId, EntryLogMetadata entryLogMeta) throws IOException {
+    public void put(long entryLogId, EntryLogMetadata entryLogMeta) throws EntryLogMetadataMapException {
         LongWrapper key = LongWrapper.get(entryLogId);
         try {
             baos.get().reset();
-            entryLogMeta.serialize(dataos.get());
-            dataos.get().flush();
-            metadataMapDB.put(key.array, baos.get().toByteArray());
+            try {
+                entryLogMeta.serialize(dataos.get());
+                dataos.get().flush();
+                metadataMapDB.put(key.array, baos.get().toByteArray());
+            } catch (IllegalStateException | IOException e) {
+                LOG.error("Failed to deserialize entrylog-metadata, entryLogId {}", entryLogId);
+                throw new EntryLogMetadataMapException(e);
+            }
         } finally {
             key.recycle();
         }
@@ -103,10 +117,13 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
     }
 
     @Override
-    public void forEach(BiConsumer<Long, EntryLogMetadata> action) throws IOException {
+    public void forEach(BiConsumer<Long, EntryLogMetadata> action) throws EntryLogMetadataMapException {
         CloseableIterator<Entry<byte[], byte[]>> iterator = metadataMapDB.iterator();
         try {
             while (iterator.hasNext()) {
+                if (isClosed.get()) {
+                    break;
+                }
                 Entry<byte[], byte[]> entry = iterator.next();
                 long entryLogId = ArrayUtil.getLong(entry.getKey(), 0);
                 ByteArrayInputStream localBais = bais.get();
@@ -124,28 +141,44 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
                 localDatais.reset();
                 action.accept(entryLogId, EntryLogMetadata.deserialize(datais.get()));
             }
+        } catch (IOException e) {
+            LOG.error("Failed to iterate over entry-log metadata map {}", e.getMessage(), e);
+            throw new EntryLogMetadataMapException(e);
         } finally {
-            iterator.close();
+            try {
+                iterator.close();
+            } catch (IOException e) {
+                LOG.error("Failed to close entry-log metadata-map rocksDB iterator {}", e.getMessage(), e);
+            }
         }
     }
 
     @Override
-    public void remove(long entryLogId) throws IOException {
+    public void remove(long entryLogId) throws EntryLogMetadataMapException {
         LongWrapper key = LongWrapper.get(entryLogId);
         try {
-            metadataMapDB.delete(key.array);
+            try {
+                metadataMapDB.delete(key.array);
+            } catch (IOException e) {
+                throw new EntryLogMetadataMapException(e);
+            }
         } finally {
             key.recycle();
         }
     }
 
     @Override
-    public int size() throws IOException {
-        return (int) metadataMapDB.count();
+    public int size() throws EntryLogMetadataMapException {
+        try {
+            return (int) metadataMapDB.count();
+        } catch (IOException e) {
+            throw new EntryLogMetadataMapException(e);
+        }
     }
 
     @Override
     public void close() throws IOException {
+        isClosed.set(true);
         metadataMapDB.close();
     }
 

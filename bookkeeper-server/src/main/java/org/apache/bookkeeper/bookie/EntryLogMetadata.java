@@ -27,7 +27,6 @@ import java.io.IOException;
 import java.util.function.LongPredicate;
 
 import org.apache.bookkeeper.util.collections.ConcurrentLongLongHashMap;
-
 /**
  * Records the total size, remaining size and the set of ledgers that comprise a
  * entry log.
@@ -37,6 +36,7 @@ public class EntryLogMetadata {
     private long totalSize;
     private long remainingSize;
     private final ConcurrentLongLongHashMap ledgersMap;
+    private static final short DEFAULT_SERIALIZATION_VERSION = 0;
 
     public EntryLogMetadata(long logId) {
         this.entryLogId = logId;
@@ -103,7 +103,6 @@ public class EntryLogMetadata {
     /**
      * Serializes {@link EntryLogMetadata} and writes to
      * {@link DataOutputStream}.
-     * 
      * @param out
      * @throws IOException
      *             throws if it couldn't serialize metadata-fields
@@ -111,6 +110,7 @@ public class EntryLogMetadata {
      *             throws if it couldn't serialize ledger-map
      */
     public void serialize(DataOutputStream out) throws IOException, IllegalStateException {
+        out.writeShort(DEFAULT_SERIALIZATION_VERSION);
         out.writeLong(entryLogId);
         out.writeLong(totalSize);
         out.writeLong(remainingSize);
@@ -123,17 +123,20 @@ public class EntryLogMetadata {
                 throw new IllegalStateException("Failed to serialize entryLogMetadata", e);
             }
         });
-        out.writeLong(remainingSize);
     }
 
     /**
      * Deserializes {@link EntryLogMetadata} from given {@link DataInputStream}.
-     * 
      * @param in
      * @return
      * @throws IOException
      */
     public static EntryLogMetadata deserialize(DataInputStream in) throws IOException {
+        short serVersion = in.readShort();
+        if ((serVersion != DEFAULT_SERIALIZATION_VERSION)) {
+            throw new IOException(String.format("%s. expected =%d, found=%d", "serialization version doesn't match",
+                    DEFAULT_SERIALIZATION_VERSION, serVersion));
+        }
         EntryLogMetadata metadata = new EntryLogMetadata(in.readLong());
         metadata.totalSize = in.readLong();
         metadata.remainingSize = in.readLong();

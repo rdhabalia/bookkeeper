@@ -25,20 +25,54 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.util.function.BiConsumer;
 
+import org.apache.bookkeeper.bookie.BookieException.EntryLogMetadataMapException;
+
 /**
- *   Map-store to store Entrylogger metadata. 
- *
+ * Map-store to store Entrylogger metadata.
  */
 public interface EntryLogMetadataMap extends Closeable {
 
-    boolean containsKey(long entryLogId) throws IOException;
+    /**
+     * Checks if record with entryLogId exists into the map.
+     *
+     * @param entryLogId
+     * @return
+     * @throws IOException
+     */
+    boolean containsKey(long entryLogId) throws EntryLogMetadataMapException;
 
-    void put(long entryLogId, EntryLogMetadata entryLogMeta) throws IOException;
+    /**
+     * Adds entryLogMetadata record into the map.
+     *
+     * @param entryLogId
+     * @param entryLogMeta
+     * @throws IOException
+     */
+    void put(long entryLogId, EntryLogMetadata entryLogMeta) throws EntryLogMetadataMapException;
 
-    void forEach(BiConsumer<Long, EntryLogMetadata> action) throws IOException;
+    /**
+     * Performs the given action for each entry in this map until all entries
+     * have been processed or the action throws an exception.
+     *
+     * @param action
+     * @throws IOException
+     */
+    void forEach(BiConsumer<Long, EntryLogMetadata> action) throws EntryLogMetadataMapException;
 
-    void remove(long entryLogId) throws IOException;
+    /**
+     * Removes entryLogMetadata record from the map.
+     *
+     * @param entryLogId
+     * @throws IOException
+     */
+    void remove(long entryLogId) throws EntryLogMetadataMapException;
 
-    int size() throws IOException;
+    /**
+     * Returns number of entryLogMetadata records presents into the map.
+     *
+     * @return
+     * @throws IOException
+     */
+    int size() throws EntryLogMetadataMapException;
 
 }

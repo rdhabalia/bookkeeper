@@ -28,6 +28,9 @@ import java.util.function.BiConsumer;
 import org.apache.bookkeeper.bookie.EntryLogMetadata;
 import org.apache.bookkeeper.bookie.EntryLogMetadataMap;
 
+/**
+ * In-memory metadata-store to store entry-log metadata-map in memory-map.
+ */
 public class InMemoryEntryLogMetadataMap implements EntryLogMetadataMap {
 
     private Map<Long, EntryLogMetadata> entryLogMetaMap = new ConcurrentHashMap<Long, EntryLogMetadata>();
