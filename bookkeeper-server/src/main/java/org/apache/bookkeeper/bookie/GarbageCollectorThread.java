@@ -44,6 +44,7 @@ import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.SafeRunnable;
+import org.apache.zookeeper.KeeperException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +55,8 @@ import org.slf4j.LoggerFactory;
 public class GarbageCollectorThread extends SafeRunnable {
     private static final Logger LOG = LoggerFactory.getLogger(GarbageCollectorThread.class);
     private static final int SECOND = 1000;
+    private static final int MAX_GC_RELEASE_LOCK_RETRY = 3;
+    private static final long GC_RELEASE_LOCK_DELAY_SEC = 60;
 
     // Maps entry log files to the set of ledgers that comprise the file and the size usage per ledger
     private Map<Long, EntryLogMetadata> entryLogMetaMap = new ConcurrentHashMap<Long, EntryLogMetadata>();
@@ -249,7 +252,7 @@ public class GarbageCollectorThread extends SafeRunnable {
                         final boolean suspendMajor,
                         final boolean suspendMinor) {
         return gcExecutor.submit(() -> {
-                runWithFlags(force, suspendMajor, suspendMinor);
+                runWithFlagsAndLock(force, suspendMajor, suspendMinor);
             });
     }
 
@@ -259,7 +262,7 @@ public class GarbageCollectorThread extends SafeRunnable {
         final boolean suspendMinor = suspendMinorCompaction.get();
 
         return gcExecutor.submit(() -> {
-                runWithFlags(force, suspendMajor, suspendMinor);
+                runWithFlagsAndLock(force, suspendMajor, suspendMinor);
             });
     }
 
@@ -306,12 +309,50 @@ public class GarbageCollectorThread extends SafeRunnable {
         boolean suspendMajor = suspendMajorCompaction.get();
         boolean suspendMinor = suspendMinorCompaction.get();
 
-        runWithFlags(force, suspendMajor, suspendMinor);
+        runWithFlagsAndLock(force, suspendMajor, suspendMinor);
 
         if (force) {
             // only set force to false if it had been true when the garbage
             // collection cycle started
             forceGarbageCollection.set(false);
+        }
+    }
+
+    /**
+     * run the GC task by trying to acquire lock and release the lock once it's
+     * completed. It fails to acquire a lock if another task is already running
+     * GC and it will return without triggering gc.
+     * 
+     * @param force
+     * @param suspendMajor
+     * @param suspendMinor
+     */
+    public void runWithFlagsAndLock(boolean force, boolean suspendMajor, boolean suspendMinor) {
+        try {
+            if (!this.garbageCollector.tryAcquireGCStartLock()) {
+                LOG.info("GC is already running by differnet task, so doing nothing");
+                return;
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to acquire lock to start gc task, previous task is already running {}", e.getMessage());
+            return;
+        }
+        try {
+            runWithFlags(force, suspendMajor, suspendMinor);
+        } finally {
+            releaseGCLock(0);
+        }
+    }
+    
+    private void releaseGCLock(int retry) {
+        if (retry > MAX_GC_RELEASE_LOCK_RETRY) {
+            return;
+        }
+        try {
+            this.garbageCollector.releaseGCStartLock();
+        } catch (Exception e) {
+            // retry N times to release the lock
+            gcExecutor.schedule(() -> releaseGCLock(retry + 1), GC_RELEASE_LOCK_DELAY_SEC, TimeUnit.SECONDS);
         }
     }
 

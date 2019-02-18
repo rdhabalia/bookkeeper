@@ -22,9 +22,11 @@
 package org.apache.bookkeeper.bookie;
 
 import static org.apache.bookkeeper.common.concurrent.FutureUtils.result;
+import static org.apache.bookkeeper.meta.ZkLedgerUnderreplicationManager.getLockData;
 
 import com.google.common.collect.Sets;
 import java.io.IOException;
+import java.net.UnknownHostException;
 import java.util.List;
 import java.util.NavigableSet;
 import java.util.Set;
@@ -40,9 +42,12 @@ import org.apache.bookkeeper.meta.LedgerManager.LedgerRangeIterator;
 import org.apache.bookkeeper.meta.ZkLedgerUnderreplicationManager;
 import org.apache.bookkeeper.meta.zk.ZKMetadataDriverBase;
 import org.apache.bookkeeper.net.BookieSocketAddress;
+import org.apache.bookkeeper.net.DNS;
 import org.apache.bookkeeper.stats.StatsLogger;
+import org.apache.bookkeeper.util.BookKeeperConstants;
 import org.apache.bookkeeper.util.ZkUtils;
 import org.apache.bookkeeper.zookeeper.ZooKeeperClient;
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
@@ -78,10 +83,11 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector {
     private boolean enableGcOverReplicatedLedger;
     private final long gcOverReplicatedLedgerIntervalMillis;
     private long lastOverReplicatedLedgerGcTimeMillis;
-    private final String zkServers;
-    private final String zkLedgersRootPath;
+    protected final String zkServers;
+    protected final String zkLedgersRootPath;
     private final boolean verifyMetadataOnGc;
     private int activeLedgerCounter;
+    private final List<ACL> zkAcls;
 
     public ScanAndCompareGarbageCollector(LedgerManager ledgerManager, CompactableLedgerStorage ledgerStorage,
             ServerConfiguration conf, StatsLogger statsLogger) throws IOException {
@@ -100,6 +106,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector {
                 + gcOverReplicatedLedgerIntervalMillis);
 
         verifyMetadataOnGc = conf.getVerifyMetadataOnGC();
+        this.zkAcls = ZkUtils.getACLs(conf);
 
         this.activeLedgerCounter = 0;
     }
@@ -257,5 +264,57 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector {
         latch.await();
         bkActiveledgers.removeAll(overReplicatedLedgers);
         return overReplicatedLedgers;
+    }
+    
+    boolean tryAcquireGCStartLock() throws IOException, InterruptedException, KeeperException {
+        ZooKeeper zk = ZooKeeperClient.newBuilder().connectString(zkServers).sessionTimeoutMs(conf.getZkTimeout())
+                .build();
+        try {
+            final String gcLockZnodePath = getGCLockPath(zkLedgersRootPath);
+            try {
+                ZkUtils.createFullPathOptimistic(zk, gcLockZnodePath, getLockData(), zkAcls, CreateMode.EPHEMERAL);
+            } catch (KeeperException.NodeExistsException e) {
+                LOG.info("GC lock is already acquired at znode path {}", gcLockZnodePath);
+                return false;
+            }
+            LOG.info("Successfully acquired gc-lock ownership at {}", gcLockZnodePath);
+            return true;
+        } finally {
+            if (zk != null) {
+                try {
+                    zk.close();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    LOG.error("Error closing zk session", e);
+                }
+            }
+        }
+    }
+    
+    void releaseGCStartLock() throws IOException, InterruptedException, KeeperException {
+        ZooKeeper zk = ZooKeeperClient.newBuilder().connectString(zkServers).sessionTimeoutMs(conf.getZkTimeout())
+                .build();
+        try {
+            final String gcLockZnodePath = getGCLockPath(zkLedgersRootPath);
+            try {
+                zk.delete(gcLockZnodePath, -1);
+            } catch (KeeperException.NoNodeException e) {
+                LOG.info("GC lock is not acquired by any process {}", gcLockZnodePath);
+            }
+        } finally {
+            if (zk != null) {
+                try {
+                    zk.close();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    LOG.error("Error closing zk session", e);
+                }
+            }
+        }
+    }
+    
+    public static String getGCLockPath(String rootPath) throws UnknownHostException {
+        String bookieHost = DNS.getDefaultHost("default"); //TODO: take bookie-name as coming from bookieServer
+        return String.format("%s/%s/%s/%s", rootPath, BookKeeperConstants.ROOT_LOCK_NODE, bookieHost, BookKeeperConstants.GC_LOCK_NODE);
     }
 }

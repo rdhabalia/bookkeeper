@@ -38,6 +38,8 @@ public class BookKeeperConstants {
     // //////////////////////////
     public static final String AVAILABLE_NODE = "available";
     public static final String COOKIE_NODE = "cookies";
+    public static final String ROOT_LOCK_NODE = "locks";
+    public static final String GC_LOCK_NODE = "gcLock";
     public static final String UNDER_REPLICATION_NODE = "underreplication";
     public static final String UNDER_REPLICATION_LOCK = "locks";
     public static final String DISABLE_NODE = "disable";

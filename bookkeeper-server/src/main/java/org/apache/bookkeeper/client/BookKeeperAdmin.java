@@ -1446,6 +1446,27 @@ public class BookKeeperAdmin implements AutoCloseable {
         urlManager.setLostBookieRecoveryDelay(previousLostBookieRecoveryDelayValue);
     }
 
+    public void triggerGC()
+            throws CompatibilityException, KeeperException, InterruptedException, UnavailableException, IOException {
+        LedgerUnderreplicationManager urlManager = getUnderreplicationManager();
+        if (!urlManager.isLedgerReplicationEnabled()) {
+            LOG.error("Autorecovery is disabled. So giving up!");
+            throw new UnavailableException("Autorecovery is disabled. So giving up!");
+        }
+
+        BookieSocketAddress auditorId =
+            AuditorElector.getCurrentAuditor(new ServerConfiguration(bkc.getConf()), bkc.getZkHandle());
+        if (auditorId == null) {
+            LOG.error("No auditor elected, though Autorecovery is enabled. So giving up.");
+            throw new UnavailableException("No auditor elected, though Autorecovery is enabled. So giving up.");
+        }
+
+        int previousLostBookieRecoveryDelayValue = urlManager.getLostBookieRecoveryDelay();
+        LOG.info("Resetting LostBookieRecoveryDelay value: {}, to kickstart audit task",
+                previousLostBookieRecoveryDelayValue);
+        urlManager.setLostBookieRecoveryDelay(previousLostBookieRecoveryDelayValue);
+    }
+
     /**
      * Triggers AuditTask by resetting lostBookieRecoveryDelay and then make
      * sure the ledgers stored in the given decommissioning bookie are properly
