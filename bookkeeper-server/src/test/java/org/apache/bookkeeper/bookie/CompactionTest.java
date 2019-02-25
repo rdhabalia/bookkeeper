@@ -139,6 +139,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
         baseConf.setLedgerStorageClass(InterleavedLedgerStorage.class.getName());
         baseConf.setIsThrottleByBytes(this.isThrottleByBytes);
         baseConf.setIsForceGCAllowWhenNoSpace(false);
+        baseConf.setGcPersistentEntrylogMetadataMapEnabled(true);
 
         super.setUp();
     }

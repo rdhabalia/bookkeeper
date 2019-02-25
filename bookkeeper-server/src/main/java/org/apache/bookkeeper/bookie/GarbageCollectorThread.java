@@ -35,7 +35,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.bookkeeper.bookie.BookieException.EntryLogMetadataMapException;
 import org.apache.bookkeeper.bookie.GarbageCollector.GarbageCleaner;
 import org.apache.bookkeeper.bookie.stats.GarbageCollectorStats;
-import org.apache.bookkeeper.bookie.storage.ldb.InMemoryEntryLogMetadataMap;
 import org.apache.bookkeeper.bookie.storage.ldb.PersistentEntryLogMetadataMap;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.meta.LedgerManager;
@@ -127,13 +126,11 @@ public class GarbageCollectorThread extends SafeRunnable {
                 Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("GarbageCollectorThread")));
     }
 
-    private EntryLogMetadataMap createEntryLogMetadataMap(boolean gcPersistentEntrylogMetadataMapEnabled) {
-        final String baseDir = this.conf.getGcPersistentEntrylogMetadataMapPath() != null
-                ? this.conf.getGcPersistentEntrylogMetadataMapPath()
-                : this.entryLogger.getLedgerDirsManager().getAllLedgerDirs().get(0).toString();
+    private EntryLogMetadataMap createEntryLogMetadataMap() {
+        String baseDir = null;
         try {
-            if (gcPersistentEntrylogMetadataMapEnabled) {
-                LOG.info("Loading persistent entrylog metadata-map from {}", baseDir);
+            if (conf.isGcPersistentEntrylogMetadataMapEnabled()) {
+                baseDir = this.conf.getGcPersistentEntrylogMetadataMapPath();
                 return new PersistentEntryLogMetadataMap(baseDir, conf);
             }
         } catch (IOException e) {
@@ -158,7 +155,7 @@ public class GarbageCollectorThread extends SafeRunnable {
         this.gcExecutor = gcExecutor;
         this.conf = conf;
         this.entryLogger = ledgerStorage.getEntryLogger();
-        this.entryLogMetaMap = createEntryLogMetadataMap(conf.isGcPersistentEntrylogMetadataMapEnabled());
+        this.entryLogMetaMap = createEntryLogMetadataMap();
 
         this.ledgerStorage = ledgerStorage;
         this.gcWaitTime = conf.getGcWaitTime();
@@ -340,7 +337,7 @@ public class GarbageCollectorThread extends SafeRunnable {
             // Extract all of the ledger ID's that comprise all of the entry
             // logs
             // (except for the current new one which is still being written to).
-            entryLogMetaMap = extractMetaFromEntryLogs(entryLogMetaMap);
+            extractMetaFromEntryLogs();
 
             // gc inactive/deleted ledgers
             doGcLedgers();
@@ -412,7 +409,9 @@ public class GarbageCollectorThread extends SafeRunnable {
         // Loop through all of the entry logs and remove the non-active ledgers.
         entryLogMetaMap.forEach((entryLogId, meta) -> {
             try {
-                removeIfLedgerNotExists(entryLogId, meta, true);
+                removeIfLedgerNotExists(meta);
+                // update entryMetadta to persistent-map
+                entryLogMetaMap.put(meta.getEntryLogId(), meta);
             } catch (EntryLogMetadataMapException e) {
                 // Ignore and continue because ledger will not be cleaned up
                 // from entry-logger in this pass and will be taken care in next
@@ -435,7 +434,7 @@ public class GarbageCollectorThread extends SafeRunnable {
         this.numActiveEntryLogs = entryLogMetaMap.size();
     }
 
-    private void removeIfLedgerNotExists(long entryLogId, EntryLogMetadata meta, boolean updateMetadata)
+    private void removeIfLedgerNotExists(EntryLogMetadata meta)
             throws EntryLogMetadataMapException {
         meta.removeLedgerIf((entryLogLedger) -> {
             // Remove the entry log ledger from the set if it isn't active.
@@ -446,10 +445,6 @@ public class GarbageCollectorThread extends SafeRunnable {
                 return false;
             }
         });
-        // update entryMetadta to persistent-map
-        if (updateMetadata) {
-            entryLogMetaMap.put(entryLogId, meta);
-        }
     }
 
     /**
@@ -503,12 +498,6 @@ public class GarbageCollectorThread extends SafeRunnable {
         this.running = false;
         LOG.info("Shutting down GarbageCollectorThread");
 
-        try {
-            entryLogMetaMap.close();
-        } catch (Exception e) {
-            LOG.warn("Failed to close entryLog metadata-map", e);
-        }
-
         while (!compacting.compareAndSet(false, true)) {
             // Wait till the thread stops compacting
             Thread.sleep(100);
@@ -516,6 +505,12 @@ public class GarbageCollectorThread extends SafeRunnable {
 
         // Interrupt GC executor thread
         gcExecutor.shutdownNow();
+
+        try {
+            entryLogMetaMap.close();
+        } catch (Exception e) {
+            LOG.warn("Failed to close entryLog metadata-map", e);
+        }
     }
 
     /**
@@ -559,11 +554,9 @@ public class GarbageCollectorThread extends SafeRunnable {
      * Method to read in all of the entry logs (those that we haven't done so
      * yet), and find the set of ledger ID's that make up each entry log file.
      *
-     * @param entryLogMetaMap
-     *            Existing EntryLogs to Meta
      * @throws IOException
      */
-    protected EntryLogMetadataMap extractMetaFromEntryLogs(EntryLogMetadataMap entryLogMetaMap)
+    protected void extractMetaFromEntryLogs()
             throws EntryLogMetadataMapException {
         // Extract it for every entry log except for the current one.
         // Entry Log ID's are just a long value that starts at 0 and increments
@@ -588,7 +581,7 @@ public class GarbageCollectorThread extends SafeRunnable {
                 // Read through the entry log file and extract the entry log
                 // meta
                 EntryLogMetadata entryLogMeta = entryLogger.getEntryLogMetadata(entryLogId);
-                removeIfLedgerNotExists(entryLogId, entryLogMeta, false);
+                removeIfLedgerNotExists(entryLogMeta);
                 if (entryLogMeta.isEmpty()) {
                     entryLogger.removeEntryLog(entryLogId);
                     // remove it from entrylogmetadata-map if it presents into map
@@ -610,7 +603,6 @@ public class GarbageCollectorThread extends SafeRunnable {
                 ++scannedLogId;
             }
         }
-        return entryLogMetaMap;
     }
 
     private void removeEntryLogRecordSafely(long entryLogId) {

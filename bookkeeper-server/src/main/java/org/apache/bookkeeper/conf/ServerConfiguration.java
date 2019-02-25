@@ -18,6 +18,7 @@
 package org.apache.bookkeeper.conf;
 
 import static org.apache.bookkeeper.util.BookKeeperConstants.MAX_LOG_SIZE_LIMIT;
+import static org.apache.bookkeeper.util.BookKeeperConstants.METADATA_DIR;
 
 import com.google.common.annotations.Beta;
 import com.google.common.base.Strings;
@@ -439,7 +440,7 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      * @return use persistent entry-log metadata map
      */
     public boolean isGcPersistentEntrylogMetadataMapEnabled() {
-        return this.getBoolean(GC_PERSISTENT_ENTRYLOGMETADATA_MAP_ENABLED, true);
+        return this.getBoolean(GC_PERSISTENT_ENTRYLOGMETADATA_MAP_ENABLED, false);
     }
 
     /**
@@ -460,7 +461,7 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      * @return entrylog metadata-map persistent store dir path.
      */
     public String getGcPersistentEntrylogMetadataMapPath() {
-        return getString(GC_PERSISTENT_ENTRYLOG_METADATA_MAP_PATH, null);
+        return getString(GC_PERSISTENT_ENTRYLOG_METADATA_MAP_PATH, getLedgerDirNames()[0] + "/" + METADATA_DIR);
     }
 
     /**

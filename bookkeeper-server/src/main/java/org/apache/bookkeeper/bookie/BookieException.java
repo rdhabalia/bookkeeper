@@ -65,8 +65,6 @@ public abstract class BookieException extends Exception {
             return new CookieNotFoundException();
         case Code.CookieExistsException:
             return new CookieExistException();
-        case Code.EntryLogMetadataMapException:
-            return new EntryLogMetadataMapException();
         case Code.MetadataStoreException:
             return new MetadataStoreException();
         case Code.UnknownBookieIdException:
@@ -264,14 +262,6 @@ public abstract class BookieException extends Exception {
      * Signal that error while accessing entry-log metadata map.
      */
     public static class EntryLogMetadataMapException extends BookieException {
-        public EntryLogMetadataMapException() {
-            this("");
-        }
-
-        public EntryLogMetadataMapException(String reason) {
-            super(Code.EntryLogMetadataMapException, reason);
-        }
-
         public EntryLogMetadataMapException(Throwable cause) {
             super(Code.EntryLogMetadataMapException, cause);
         }

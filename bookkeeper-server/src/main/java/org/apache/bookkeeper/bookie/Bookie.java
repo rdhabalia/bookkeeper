@@ -1560,6 +1560,15 @@ public class Bookie extends BookieCriticalThread {
                     }
                 }
             }
+
+            // Clean up metadata directories if they are separate from the
+            // ledger dirs
+            File metadataDir = new File(conf.getGcPersistentEntrylogMetadataMapPath());
+            if (!cleanDir(metadataDir)) {
+                LOG.error("Formatting ledger metadata directory " + metadataDir + " failed");
+                return false;
+            }
+
         }
 
         LOG.info("Bookie format completed successfully");

@@ -21,9 +21,13 @@
 
 package org.apache.bookkeeper.bookie;
 
+import io.netty.util.Recycler;
+import io.netty.util.Recycler.Handle;
+
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+
 import java.util.function.LongPredicate;
 
 import org.apache.bookkeeper.util.collections.ConcurrentLongLongHashMap;
@@ -32,17 +36,21 @@ import org.apache.bookkeeper.util.collections.ConcurrentLongLongHashMap;
  * entry log.
  */
 public class EntryLogMetadata {
-    private final long entryLogId;
-    private long totalSize;
-    private long remainingSize;
-    private final ConcurrentLongLongHashMap ledgersMap;
+    protected long entryLogId;
+    protected long totalSize;
+    protected long remainingSize;
+    protected final ConcurrentLongLongHashMap ledgersMap;
     private static final short DEFAULT_SERIALIZATION_VERSION = 0;
 
+    protected EntryLogMetadata() {
+        ledgersMap = new ConcurrentLongLongHashMap(256, 1);
+    }
+
     public EntryLogMetadata(long logId) {
+        this();
         this.entryLogId = logId;
 
         totalSize = remainingSize = 0;
-        ledgersMap = new ConcurrentLongLongHashMap(256, 1);
     }
 
     public void addLedgerSize(long ledgerId, long size) {
@@ -123,21 +131,23 @@ public class EntryLogMetadata {
                 throw new IllegalStateException("Failed to serialize entryLogMetadata", e);
             }
         });
+        out.flush();
     }
 
     /**
      * Deserializes {@link EntryLogMetadata} from given {@link DataInputStream}.
+     * @param metadata EntryLogMetadata object to which input data will be read
      * @param in
      * @return
      * @throws IOException
      */
-    public static EntryLogMetadata deserialize(DataInputStream in) throws IOException {
+    public static EntryLogMetadata deserialize(EntryLogMetadata metadata, DataInputStream in) throws IOException {
         short serVersion = in.readShort();
         if ((serVersion != DEFAULT_SERIALIZATION_VERSION)) {
             throw new IOException(String.format("%s. expected =%d, found=%d", "serialization version doesn't match",
                     DEFAULT_SERIALIZATION_VERSION, serVersion));
         }
-        EntryLogMetadata metadata = new EntryLogMetadata(in.readLong());
+        metadata.entryLogId = in.readLong();
         metadata.totalSize = in.readLong();
         metadata.remainingSize = in.readLong();
         long ledgersMapSize = in.readLong();
@@ -147,5 +157,43 @@ public class EntryLogMetadata {
             metadata.ledgersMap.put(ledgerId, entryId);
         }
         return metadata;
+    }
+
+    public void clear() {
+        entryLogId = -1L;
+        totalSize = -1L;
+        remainingSize = -1L;
+        ledgersMap.clear();
+    }
+
+    /**
+     * Recyclable {@link EntryLogMetadata} class.
+     *
+     */
+    public static class EntryLogMetadataRecyclable extends EntryLogMetadata {
+
+        private final Handle<EntryLogMetadataRecyclable> recyclerHandle;
+
+        private EntryLogMetadataRecyclable(Handle<EntryLogMetadataRecyclable> recyclerHandle) {
+            this.recyclerHandle = recyclerHandle;
+        }
+
+        private static final Recycler<EntryLogMetadataRecyclable> RECYCLER =
+                new Recycler<EntryLogMetadataRecyclable>() {
+            protected EntryLogMetadataRecyclable newObject(Recycler.Handle<EntryLogMetadataRecyclable> handle) {
+                return new EntryLogMetadataRecyclable(handle);
+            }
+        };
+
+        public static EntryLogMetadataRecyclable get() {
+            EntryLogMetadataRecyclable metadata = RECYCLER.get();
+            return metadata;
+        }
+
+        public void recycle() {
+            clear();
+            recyclerHandle.recycle(this);
+        }
+
     }
 }

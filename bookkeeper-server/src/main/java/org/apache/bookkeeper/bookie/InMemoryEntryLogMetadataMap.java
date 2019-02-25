@@ -18,15 +18,12 @@
  * under the License.
  *
  */
-package org.apache.bookkeeper.bookie.storage.ldb;
+package org.apache.bookkeeper.bookie;
 
 import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
-
-import org.apache.bookkeeper.bookie.EntryLogMetadata;
-import org.apache.bookkeeper.bookie.EntryLogMetadataMap;
 
 /**
  * In-memory metadata-store to store entry-log metadata-map in memory-map.

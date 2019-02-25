@@ -26,13 +26,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.nio.file.FileSystems;
 import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 
 import org.apache.bookkeeper.bookie.BookieException.EntryLogMetadataMapException;
 import org.apache.bookkeeper.bookie.EntryLogMetadata;
+import org.apache.bookkeeper.bookie.EntryLogMetadata.EntryLogMetadataRecyclable;
 import org.apache.bookkeeper.bookie.EntryLogMetadataMap;
 import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorage.CloseableIterator;
 import org.apache.bookkeeper.bookie.storage.ldb.KeyValueStorageFactory.DbConfigType;
@@ -76,8 +76,8 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
         }
     };
 
-    public PersistentEntryLogMetadataMap(String path, ServerConfiguration conf) throws IOException {
-        String metadataPath = FileSystems.getDefault().getPath(path, "metadata").toFile().toString();
+    public PersistentEntryLogMetadataMap(String metadataPath, ServerConfiguration conf) throws IOException {
+        LOG.info("Loading persistent entrylog metadata-map from {}", metadataPath);
         metadataMapDB = KeyValueStorageRocksDB.factory.newKeyValueStorage(metadataPath, DbConfigType.Small, conf);
     }
 
@@ -104,10 +104,9 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
             baos.get().reset();
             try {
                 entryLogMeta.serialize(dataos.get());
-                dataos.get().flush();
                 metadataMapDB.put(key.array, baos.get().toByteArray());
             } catch (IllegalStateException | IOException e) {
-                LOG.error("Failed to deserialize entrylog-metadata, entryLogId {}", entryLogId);
+                LOG.error("Failed to serialize entrylog-metadata, entryLogId {}", entryLogId);
                 throw new EntryLogMetadataMapException(e);
             }
         } finally {
@@ -116,6 +115,10 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
 
     }
 
+    /**
+     * {@link EntryLogMetadata} life-cycle in supplied action will be transient
+     * and it will be recycled as soon as supplied action is completed.
+     */
     @Override
     public void forEach(BiConsumer<Long, EntryLogMetadata> action) throws EntryLogMetadataMapException {
         CloseableIterator<Entry<byte[], byte[]>> iterator = metadataMapDB.iterator();
@@ -139,7 +142,13 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
                 }
                 localBais.reset();
                 localDatais.reset();
-                action.accept(entryLogId, EntryLogMetadata.deserialize(datais.get()));
+                EntryLogMetadataRecyclable metadata = EntryLogMetadataRecyclable.get();
+                try {
+                    EntryLogMetadata.deserialize(metadata, datais.get());
+                    action.accept(entryLogId, metadata);
+                } finally {
+                    metadata.recycle();
+                }
             }
         } catch (IOException e) {
             LOG.error("Failed to iterate over entry-log metadata map {}", e.getMessage(), e);
