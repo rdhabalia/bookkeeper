@@ -30,6 +30,7 @@ import java.io.IOException;
 
 import java.util.function.LongPredicate;
 
+import org.apache.bookkeeper.bookie.EntryLogMetadata.EntryLogMetadataRecyclable;
 import org.apache.bookkeeper.util.collections.ConcurrentLongLongHashMap;
 /**
  * Records the total size, remaining size and the set of ledgers that comprise a
@@ -111,6 +112,16 @@ public class EntryLogMetadata {
     /**
      * Serializes {@link EntryLogMetadata} and writes to
      * {@link DataOutputStream}.
+     * <pre>
+     * schema:
+     * 2-bytes: schema-version
+     * 8-bytes: entrylog-entryLogId
+     * 8-bytes: entrylog-totalSize
+     * 8-bytes: entrylog-remainingSize
+     * 8-bytes: total number of ledgers
+     * ledgers-map
+     * [repeat]: (8-bytes::ledgerId, 8-bytes::size-of-ledger)
+     * </pre>
      * @param out
      * @throws IOException
      *             throws if it couldn't serialize metadata-fields
@@ -135,28 +146,37 @@ public class EntryLogMetadata {
     }
 
     /**
-     * Deserializes {@link EntryLogMetadata} from given {@link DataInputStream}.
-     * @param metadata EntryLogMetadata object to which input data will be read
+     * Deserializes {@link EntryLogMetadataRecyclable} from given {@link DataInputStream}.
+     * Caller has to recycle returned {@link EntryLogMetadataRecyclable}.
      * @param in
      * @return
      * @throws IOException
      */
-    public static EntryLogMetadata deserialize(EntryLogMetadata metadata, DataInputStream in) throws IOException {
-        short serVersion = in.readShort();
-        if ((serVersion != DEFAULT_SERIALIZATION_VERSION)) {
-            throw new IOException(String.format("%s. expected =%d, found=%d", "serialization version doesn't match",
-                    DEFAULT_SERIALIZATION_VERSION, serVersion));
+    public static EntryLogMetadataRecyclable deserialize(DataInputStream in) throws IOException {
+        EntryLogMetadataRecyclable metadata = EntryLogMetadataRecyclable.get();
+        try {
+            short serVersion = in.readShort();
+            if ((serVersion != DEFAULT_SERIALIZATION_VERSION)) {
+                throw new IOException(String.format("%s. expected =%d, found=%d", "serialization version doesn't match",
+                        DEFAULT_SERIALIZATION_VERSION, serVersion));
+            }
+            metadata.entryLogId = in.readLong();
+            metadata.totalSize = in.readLong();
+            metadata.remainingSize = in.readLong();
+            long ledgersMapSize = in.readLong();
+            for (int i = 0; i < ledgersMapSize; i++) {
+                long ledgerId = in.readLong();
+                long entryId = in.readLong();
+                metadata.ledgersMap.put(ledgerId, entryId);
+            }
+            return metadata;
+        } catch (IOException e) {
+            metadata.recycle();
+            throw e;
+        } catch (Exception e) {
+            metadata.recycle();
+            throw new IOException(e);
         }
-        metadata.entryLogId = in.readLong();
-        metadata.totalSize = in.readLong();
-        metadata.remainingSize = in.readLong();
-        long ledgersMapSize = in.readLong();
-        for (int i = 0; i < ledgersMapSize; i++) {
-            long ledgerId = in.readLong();
-            long entryId = in.readLong();
-            metadata.ledgersMap.put(ledgerId, entryId);
-        }
-        return metadata;
     }
 
     public void clear() {

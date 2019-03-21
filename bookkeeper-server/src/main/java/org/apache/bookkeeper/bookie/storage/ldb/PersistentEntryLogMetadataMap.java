@@ -142,9 +142,8 @@ public class PersistentEntryLogMetadataMap implements EntryLogMetadataMap {
                 }
                 localBais.reset();
                 localDatais.reset();
-                EntryLogMetadataRecyclable metadata = EntryLogMetadataRecyclable.get();
+                EntryLogMetadataRecyclable metadata = EntryLogMetadata.deserialize(datais.get());
                 try {
-                    EntryLogMetadata.deserialize(metadata, datais.get());
                     action.accept(entryLogId, metadata);
                 } finally {
                     metadata.recycle();
