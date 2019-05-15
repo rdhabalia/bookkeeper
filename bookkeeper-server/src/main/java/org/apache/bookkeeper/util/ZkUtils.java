@@ -240,10 +240,18 @@ public class ZkUtils {
         });
 
         synchronized (ctx) {
+            long startTime = System.currentTimeMillis();
+            long zkOpTimeoutMs = TimeUnit.SECONDS.toMillis(timeOutSec);
             while (!ctx.done) {
                 try {
-                    ctx.wait(timeOutSec > 0 ? TimeUnit.SECONDS.toMillis(timeOutSec) : 0);
+                    ctx.wait(zkOpTimeoutMs > 0 ? zkOpTimeoutMs : 0);
                 } catch (InterruptedException e) {
+                    ctx.rc = Code.OPERATIONTIMEOUT.intValue();
+                    ctx.done = true;
+                }
+                // timeout the process if get-children response not received
+                // zkOpTimeoutMs.
+                if (zkOpTimeoutMs > 0 && (System.currentTimeMillis() - startTime) >= zkOpTimeoutMs) {
                     ctx.rc = Code.OPERATIONTIMEOUT.intValue();
                     ctx.done = true;
                 }
