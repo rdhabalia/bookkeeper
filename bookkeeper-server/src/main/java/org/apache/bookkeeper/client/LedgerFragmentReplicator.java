@@ -53,6 +53,7 @@ import org.apache.bookkeeper.stats.StatsLogger;
 import org.apache.bookkeeper.stats.annotations.StatsDoc;
 import org.apache.bookkeeper.util.ByteBufList;
 import org.apache.zookeeper.AsyncCallback;
+import org.apache.zookeeper.AsyncCallback.VoidCallback;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -151,12 +152,59 @@ public class LedgerFragmentReplicator {
          * Now asynchronously replicate all of the entries for the ledger
          * fragment that were on the dead bookie.
          */
+        int batchEntries = 10; //TODO: configurable
+        boolean completeCbWithBatchFailure = batchEntries > 0;
         MultiCallback ledgerFragmentEntryMcb = new MultiCallback(
                 entriesToReplicate.size(), ledgerFragmentMcb, null, BKException.Code.OK,
-                BKException.Code.LedgerRecoveryException);
-        for (final Long entryId : entriesToReplicate) {
-            recoverLedgerFragmentEntry(entryId, lh, ledgerFragmentEntryMcb,
-                    newBookies);
+                BKException.Code.LedgerRecoveryException, null, completeCbWithBatchFailure);
+        
+        if (completeCbWithBatchFailure) {
+            int totalBatches = entriesToReplicate.size() / batchEntries
+                    + (entriesToReplicate.size() % batchEntries == 0 ? 0 : 1);
+            MultiCallback allBatchEntriesCb = new MultiCallback(totalBatches, ledgerFragmentMcb, null,
+                    BKException.Code.OK, BKException.Code.LedgerRecoveryException, null, true);
+            readEntriesInBatch(totalBatches, batchEntries, 0, lh, entriesToReplicate, newBookies, allBatchEntriesCb);
+        } else {
+            for (final Long entryId : entriesToReplicate) {
+                recoverLedgerFragmentEntry(entryId, lh, ledgerFragmentEntryMcb, newBookies);
+            }
+        }
+    }
+
+    private void readEntriesInBatch(int totalBatches, int batchEntries, int batch, final LedgerHandle lh,
+            List<Long> entriesToReplicate, Set<BookieSocketAddress> newBookies, MultiCallback allBatchEntriesCb) {
+        int startIndex = batch * batchEntries;
+        int endIndex = startIndex + batchEntries;
+        endIndex = endIndex > entriesToReplicate.size() ? entriesToReplicate.size() : endIndex;
+
+        if (batch >= totalBatches) {
+            allBatchEntriesCb.processResult(BKException.Code.OK, null, null);
+            return;
+        }
+
+        MultiCallback singleBatchEntriesCb = new MultiCallback((endIndex - startIndex), new VoidCallback() {
+            @Override
+            public void processResult(int rc, String path, Object ctx) {
+                if (BKException.Code.OK != rc) {
+                    allBatchEntriesCb.processResult(BKException.Code.LedgerRecoveryException, null, null);
+                    return;
+                }
+                allBatchEntriesCb.processResult(BKException.Code.OK, null, null);
+                readEntriesInBatch(totalBatches - 1, batchEntries, batch + 1, lh, entriesToReplicate, newBookies,
+                        allBatchEntriesCb);
+            }
+        }, null, BKException.Code.OK, BKException.Code.LedgerRecoveryException, null, true);
+
+        // read entries from the batch: (startIndex, endIndex)
+        for (int entryIndex = startIndex; entryIndex < endIndex; entryIndex++) {
+            for (final Long entryId : entriesToReplicate) {
+                try {
+                    recoverLedgerFragmentEntry(entryId, lh, singleBatchEntriesCb, newBookies);
+                } catch (InterruptedException e) {
+                    LOG.warn("Failed to recover ledgerId: {} due to {} ", lh.getId(), e.getMessage());
+                    singleBatchEntriesCb.processResult(BKException.Code.LedgerRecoveryException, null, null);
+                }
+            }
         }
     }
 

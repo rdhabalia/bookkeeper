@@ -267,20 +267,23 @@ public class BookkeeperInternalCallbacks {
         final AtomicInteger done = new AtomicInteger();
         // List of the exceptions from operations that completed unsuccessfully
         final LinkedBlockingQueue<Integer> exceptions = new LinkedBlockingQueue<Integer>();
+        boolean callCompleted = false;
+        boolean completeCbImmediatelyWithFailure = false;
 
         public MultiCallback(int expected, AsyncCallback.VoidCallback cb, Object context,
                              int successRc, int failureRc) {
-            this(expected, cb, context, successRc, failureRc, null);
+            this(expected, cb, context, successRc, failureRc, null, false);
         }
 
         public MultiCallback(int expected, AsyncCallback.VoidCallback cb, Object context,
-                             int successRc, int failureRc, ExecutorService callbackExecutor) {
+                             int successRc, int failureRc, ExecutorService callbackExecutor, boolean completeCbImmediatelyWithFailure) {
             this.expected = expected;
             this.cb = cb;
             this.context = context;
             this.failureRc = failureRc;
             this.successRc = successRc;
             this.callbackExecutor = callbackExecutor;
+            this.completeCbImmediatelyWithFailure = completeCbImmediatelyWithFailure;
             if (expected == 0) {
                 callback();
             }
@@ -311,6 +314,10 @@ public class BookkeeperInternalCallbacks {
         }
 
         private void doCallback() {
+            if (callCompleted) {
+                return;
+            }
+            callCompleted = true;
             if (exceptions.isEmpty()) {
                 cb.processResult(successRc, null, context);
             } else {
@@ -323,10 +330,17 @@ public class BookkeeperInternalCallbacks {
             if (rc != successRc) {
                 LOG.error("Error in multi callback : " + rc);
                 exceptions.add(rc);
+                if (this.completeCbImmediatelyWithFailure) {
+                    callback();
+                    return;
+                }
             }
             tick();
         }
 
+        public LinkedBlockingQueue<Integer> getExceptions() {
+            return exceptions;
+        }
     }
 
     /**
