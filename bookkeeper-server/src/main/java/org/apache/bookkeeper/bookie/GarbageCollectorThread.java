@@ -129,8 +129,8 @@ public class GarbageCollectorThread extends SafeRunnable {
     private EntryLogMetadataMap createEntryLogMetadataMap() {
         String baseDir = null;
         try {
-            if (conf.isGcPersistentEntrylogMetadataMapEnabled()) {
-                baseDir = this.conf.getGcPersistentEntrylogMetadataMapPath();
+            if (conf.isGcEntryLogMetadataCacheEnabled()) {
+                baseDir = this.conf.getGcEntryLogMetadataCachePath();
                 return new PersistentEntryLogMetadataMap(baseDir, conf);
             }
         } catch (IOException e) {

@@ -18,7 +18,7 @@
 package org.apache.bookkeeper.conf;
 
 import static org.apache.bookkeeper.util.BookKeeperConstants.MAX_LOG_SIZE_LIMIT;
-import static org.apache.bookkeeper.util.BookKeeperConstants.METADATA_DIR;
+import static org.apache.bookkeeper.util.BookKeeperConstants.ENTRYLOG_INDEX_CACHE;
 
 import com.google.common.annotations.Beta;
 import com.google.common.base.Strings;
@@ -105,8 +105,8 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
     protected static final String GC_OVERREPLICATED_LEDGER_WAIT_TIME = "gcOverreplicatedLedgerWaitTime";
     protected static final String USE_TRANSACTIONAL_COMPACTION = "useTransactionalCompaction";
     protected static final String VERIFY_METADATA_ON_GC = "verifyMetadataOnGC";
-    protected static final String GC_PERSISTENT_ENTRYLOGMETADATA_MAP_ENABLED = "gcPersistentEntrylogMetadataMapEnabled";
-    protected static final String GC_PERSISTENT_ENTRYLOG_METADATA_MAP_PATH = "gcPersistentEntrylogMetadataMapPath";
+    protected static final String GC_ENTRYLOGMETADATA_CACHE_ENABLED = "gcEntryLogMetadataCacheEnabled";
+    protected static final String GC_ENTRYLOG_METADATA_CACHE_PATH = "gcEntryLogMetadataCachePath";
     // Scrub Parameters
     protected static final String LOCAL_SCRUB_PERIOD = "localScrubInterval";
     protected static final String LOCAL_SCRUB_RATE_LIMIT = "localScrubRateLimit";
@@ -439,19 +439,19 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      * entrylogMetadataMap.
      * @return use persistent entry-log metadata map
      */
-    public boolean isGcPersistentEntrylogMetadataMapEnabled() {
-        return this.getBoolean(GC_PERSISTENT_ENTRYLOGMETADATA_MAP_ENABLED, false);
+    public boolean isGcEntryLogMetadataCacheEnabled() {
+        return this.getBoolean(GC_ENTRYLOGMETADATA_CACHE_ENABLED, false);
     }
 
     /**
      * Set whether the bookie is configured to use persistent
      * entrylogMetadataMap.
-     * @param gcPersistentEntrylogMetadataMapEnabled
+     * @param gcEntryLogMetadataCacheEnabled
      * @return server configuration
      */
-    public ServerConfiguration setGcPersistentEntrylogMetadataMapEnabled(
-            boolean gcPersistentEntrylogMetadataMapEnabled) {
-        this.setProperty(GC_PERSISTENT_ENTRYLOGMETADATA_MAP_ENABLED, gcPersistentEntrylogMetadataMapEnabled);
+    public ServerConfiguration setGcEntryLogMetadataCacheEnabled(
+            boolean gcEntryLogMetadataCacheEnabled) {
+        this.setProperty(GC_ENTRYLOGMETADATA_CACHE_ENABLED, gcEntryLogMetadataCacheEnabled);
         return this;
     }
 
@@ -460,8 +460,8 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      *
      * @return entrylog metadata-map persistent store dir path.
      */
-    public String getGcPersistentEntrylogMetadataMapPath() {
-        return getString(GC_PERSISTENT_ENTRYLOG_METADATA_MAP_PATH, getLedgerDirNames()[0] + "/" + METADATA_DIR);
+    public String getGcEntryLogMetadataCachePath() {
+        return getString(GC_ENTRYLOG_METADATA_CACHE_PATH, getLedgerDirNames()[0] + "/" + ENTRYLOG_INDEX_CACHE);
     }
 
     /**
@@ -470,8 +470,8 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      * @param gcPersistentEntrylogMetadataMapPath.
      * @return server configuration.
      */
-    public ServerConfiguration setGcPersistentEntrylogMetadataMapPath(String gcPersistentEntrylogMetadataMapPath) {
-        this.setProperty(GC_PERSISTENT_ENTRYLOG_METADATA_MAP_PATH, gcPersistentEntrylogMetadataMapPath);
+    public ServerConfiguration setGcEntryLogMetadataCachePath(String gcEntrylogMetadataCachePath) {
+        this.setProperty(GC_ENTRYLOG_METADATA_CACHE_PATH, gcEntrylogMetadataCachePath);
         return this;
     }
 
