@@ -573,6 +573,11 @@ public class Auditor {
                 for (LedgerFragment f : fragments) {
                     bookies.addAll(f.getAddresses());
                 }
+                if (bookies.isEmpty()) {
+                    // no missing fragments
+                    callback.processResult(Code.OK, null, null);
+                    return;
+                }
                 publishSuspectedLedgersAsync(
                     bookies.stream().map(BookieSocketAddress::toString).collect(Collectors.toList()),
                     Sets.newHashSet(lh.getId())
