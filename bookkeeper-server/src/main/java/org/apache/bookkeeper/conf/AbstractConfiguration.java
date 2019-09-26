@@ -127,6 +127,7 @@ public abstract class AbstractConfiguration<T extends AbstractConfiguration>
     protected static final String TLS_TRUSTSTORE = "tlsTrustStore";
     protected static final String TLS_TRUSTSTORE_PASSWORD_PATH = "tlsTrustStorePasswordPath";
     protected static final String TLS_CERTIFICATE_PATH = "tlsCertificatePath";
+    protected static final String TLS_CERT_FILES_REFRESH_DURATION_SECONDS = "tlsCertFilesRefreshDurationSeconds";
 
     //Netty configuration
     protected static final String NETTY_MAX_FRAME_SIZE = "nettyMaxFrameSizeBytes";
@@ -728,6 +729,31 @@ public abstract class AbstractConfiguration<T extends AbstractConfiguration>
         setProperty(TLS_CLIENT_AUTHENTICATION, enabled);
         return getThis();
     }
+
+    /**
+     * Set tls certificate files refresh duration in seconds.
+     *
+     * @param certFilesRefreshSec
+     *            tls certificate files refresh duration in seconds (set 0 to
+     *            disable auto refresh)
+     * @return current configuration
+     */
+    public T setTLSCertFilesRefreshDurationSeconds(long certFilesRefreshSec) {
+        setProperty(TLS_CERT_FILES_REFRESH_DURATION_SECONDS, certFilesRefreshSec);
+        return getThis();
+    }
+
+    /**
+     * Get tls certificate files refresh duration in seconds.
+     *
+     * @return tls certificate files refresh duration in seconds. Default 0
+     *         to disable auto refresh.
+     *
+     */
+    public long getTLSCertFilesRefreshDurationSeconds() {
+        return getLong(TLS_CERT_FILES_REFRESH_DURATION_SECONDS, 0);
+    }
+
 
     /**
      * Set the list of enabled TLS cipher suites. Leave null not to override default JDK list. This list will be passed
