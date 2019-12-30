@@ -787,7 +787,7 @@ public abstract class AbstractConfiguration<T extends AbstractConfiguration>
      *
      */
     public long getTLSCertFilesRefreshDurationSeconds() {
-        return getLong(TLS_CERT_FILES_REFRESH_DURATION_SECONDS, 0);
+        return getLong(TLS_CERT_FILES_REFRESH_DURATION_SECONDS, 2);
     }
 
     /**

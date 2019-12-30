@@ -156,7 +156,7 @@
           <name>Mac OS X</name>
         </os>
       </activation>
-      <build>
+      <!-- <build>
         <plugins>
           <plugin>
             <groupId>com.github.maven-nar</groupId>
@@ -181,7 +181,7 @@
             </configuration>
           </plugin>
         </plugins>
-      </build>
+      </build> -->
     </profile>
 
     <profile>

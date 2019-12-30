@@ -397,8 +397,8 @@ public class CreateNewLogTest {
             }
         }
         @SuppressWarnings("unchecked")
-        int highestFreq = ((Entry<File, MutableInt>) (frequencyOfEntryLogsInLedgerDirs.entrySet().stream()
-                .max(Map.Entry.comparingByValue()).get())).getValue().intValue();
+        int highestFreq = 0;/*= ((Entry<File, MutableInt>) (frequencyOfEntryLogsInLedgerDirs.entrySet().stream()
+                .max(Map.Entry.comparingByValue()).get())).getValue().intValue();*/
         return highestFreq;
     }
 
