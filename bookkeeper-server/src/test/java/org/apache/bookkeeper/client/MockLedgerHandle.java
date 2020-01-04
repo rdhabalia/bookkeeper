@@ -28,6 +28,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
@@ -38,9 +39,11 @@ import org.apache.bookkeeper.client.AsyncCallback.ReadCallback;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
 import org.apache.bookkeeper.client.api.LastConfirmedAndEntry;
 import org.apache.bookkeeper.client.api.LedgerEntries;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.client.api.ReadHandle;
 import org.apache.bookkeeper.client.api.WriteFlag;
 import org.apache.bookkeeper.client.impl.LedgerEntryImpl;
+import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.versioning.LongVersion;
 import org.apache.bookkeeper.versioning.Versioned;
 import org.slf4j.Logger;
@@ -62,8 +65,8 @@ public class MockLedgerHandle extends LedgerHandle {
 
     MockLedgerHandle(MockBookKeeper bk, long id, DigestType digest, byte[] passwd) throws GeneralSecurityException {
         super(bk.getClientCtx(), id,
-              new Versioned<>(new LedgerMetadata(3, 3, 2, DigestType.MAC, "".getBytes()), new LongVersion(0L)),
-              DigestType.MAC, "".getBytes(), WriteFlag.NONE);
+              new Versioned<>(createMetadata(digest, passwd), new LongVersion(0L)),
+              digest, passwd, WriteFlag.NONE);
         this.bk = bk;
         this.id = id;
         this.digest = digest;
@@ -263,6 +266,18 @@ public class MockLedgerHandle extends LedgerHandle {
                                                                                       long timeOutInMillis,
                                                                                       boolean parallel) {
         return readHandle.readLastAddConfirmedAndEntryAsync(entryId, timeOutInMillis, parallel);
+    }
+
+    private static LedgerMetadata createMetadata(DigestType digest, byte[] passwd) {
+        List<BookieSocketAddress> ensemble = Lists.newArrayList(
+                new BookieSocketAddress("192.0.2.1", 1234),
+                new BookieSocketAddress("192.0.2.2", 1234),
+                new BookieSocketAddress("192.0.2.3", 1234));
+        return LedgerMetadataBuilder.create()
+            .withDigestType(digest.toApiDigestType())
+            .withPassword(passwd)
+            .newEnsembleEntry(0L, ensemble)
+            .build();
     }
 
     private static final Logger log = LoggerFactory.getLogger(MockLedgerHandle.class);

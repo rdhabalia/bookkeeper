@@ -19,6 +19,7 @@ package org.apache.bookkeeper.client;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
+import static org.apache.bookkeeper.meta.LedgerMetadataSerDe.CURRENT_METADATA_FORMAT_VERSION;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableMap;
@@ -31,10 +32,11 @@ import java.util.Optional;
 import java.util.TreeMap;
 
 import org.apache.bookkeeper.client.api.DigestType;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
+import org.apache.bookkeeper.client.api.LedgerMetadata.State;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience.LimitedPrivate;
 import org.apache.bookkeeper.common.annotation.InterfaceStability.Unstable;
 import org.apache.bookkeeper.net.BookieSocketAddress;
-import org.apache.bookkeeper.proto.DataFormats.LedgerMetadataFormat;
 
 /**
  * Builder for building LedgerMetadata objects.
@@ -43,20 +45,22 @@ import org.apache.bookkeeper.proto.DataFormats.LedgerMetadataFormat;
 @Unstable
 @VisibleForTesting
 public class LedgerMetadataBuilder {
+    private int metadataFormatVersion = CURRENT_METADATA_FORMAT_VERSION;
     private int ensembleSize = 3;
     private int writeQuorumSize = 3;
     private int ackQuorumSize = 2;
 
-    private LedgerMetadataFormat.State state = LedgerMetadataFormat.State.OPEN;
+    private State state = State.OPEN;
     private Optional<Long> lastEntryId = Optional.empty();
     private Optional<Long> length = Optional.empty();
 
     private TreeMap<Long, List<BookieSocketAddress>> ensembles = new TreeMap<>();
 
-    private DigestType digestType = DigestType.CRC32C;
+    private Optional<DigestType> digestType = Optional.empty();
     private Optional<byte[]> password = Optional.empty();
 
-    private Optional<Long> ctime = Optional.empty();
+    private long ctime = -1;
+    private boolean storeCtime = false;
     private Map<String, byte[]> customMetadata = Collections.emptyMap();
 
     public static LedgerMetadataBuilder create() {
@@ -65,34 +69,37 @@ public class LedgerMetadataBuilder {
 
     public static LedgerMetadataBuilder from(LedgerMetadata other) {
         LedgerMetadataBuilder builder = new LedgerMetadataBuilder();
+        builder.metadataFormatVersion = other.getMetadataFormatVersion();
         builder.ensembleSize = other.getEnsembleSize();
         builder.writeQuorumSize = other.getWriteQuorumSize();
         builder.ackQuorumSize = other.getAckQuorumSize();
 
         builder.state = other.getState();
-
-        long lastEntryId = other.getLastEntryId();
-        if (lastEntryId != LedgerHandle.INVALID_ENTRY_ID) {
-            builder.lastEntryId = Optional.of(lastEntryId);
-        }
-        long length = other.getLength();
-        if (length > 0) {
-            builder.length = Optional.of(length);
+        if (builder.state == State.CLOSED) {
+            builder.lastEntryId = Optional.of(other.getLastEntryId());
+            builder.length = Optional.of(other.getLength());
         }
 
         builder.ensembles.putAll(other.getAllEnsembles());
 
-        builder.digestType = other.getDigestType();
         if (other.hasPassword()) {
             builder.password = Optional.of(other.getPassword());
+            builder.digestType = Optional.of(other.getDigestType());
         }
 
-        if (other.storeSystemtimeAsLedgerCreationTime) {
-            builder.ctime = Optional.of(other.getCtime());
-        }
+        builder.ctime = other.getCtime();
+
+        /** Hack to get around fact that ctime was never versioned correctly */
+        builder.storeCtime = LedgerMetadataUtils.shouldStoreCtime(other);
+
         builder.customMetadata = ImmutableMap.copyOf(other.getCustomMetadata());
 
         return builder;
+    }
+
+    public LedgerMetadataBuilder withMetadataFormatVersion(int version) {
+        this.metadataFormatVersion = version;
+        return this;
     }
 
     public LedgerMetadataBuilder withPassword(byte[] password) {
@@ -101,7 +108,7 @@ public class LedgerMetadataBuilder {
     }
 
     public LedgerMetadataBuilder withDigestType(DigestType digestType) {
-        this.digestType = digestType;
+        this.digestType = Optional.of(digestType);
         return this;
     }
 
@@ -112,14 +119,11 @@ public class LedgerMetadataBuilder {
     }
 
     public LedgerMetadataBuilder withWriteQuorumSize(int writeQuorumSize) {
-        checkArgument(ensembleSize >= writeQuorumSize, "Write quorum must be less or equal to ensemble size");
-        checkArgument(writeQuorumSize >= ackQuorumSize, "Write quorum must be greater or equal to ack quorum");
         this.writeQuorumSize = writeQuorumSize;
         return this;
     }
 
     public LedgerMetadataBuilder withAckQuorumSize(int ackQuorumSize) {
-        checkArgument(writeQuorumSize >= ackQuorumSize, "Ack quorum must be less or equal to write quorum");
         this.ackQuorumSize = ackQuorumSize;
         return this;
     }
@@ -143,21 +147,49 @@ public class LedgerMetadataBuilder {
     }
 
     public LedgerMetadataBuilder withInRecoveryState() {
-        this.state = LedgerMetadataFormat.State.IN_RECOVERY;
+        this.state = State.IN_RECOVERY;
         return this;
     }
 
-    public LedgerMetadataBuilder closingAt(long lastEntryId, long length) {
+    public LedgerMetadataBuilder withClosedState() {
+        this.state = State.CLOSED;
+        return this;
+    }
+
+    public LedgerMetadataBuilder withLastEntryId(long lastEntryId) {
         this.lastEntryId = Optional.of(lastEntryId);
+        return this;
+    }
+
+    public LedgerMetadataBuilder withLength(long length) {
         this.length = Optional.of(length);
-        this.state = LedgerMetadataFormat.State.CLOSED;
+        return this;
+    }
+
+    public LedgerMetadataBuilder withCustomMetadata(Map<String, byte[]> customMetadata) {
+        this.customMetadata = ImmutableMap.copyOf(customMetadata);
+        return this;
+    }
+
+    public LedgerMetadataBuilder withCreationTime(long ctime) {
+        this.ctime = ctime;
+        return this;
+    }
+
+    public LedgerMetadataBuilder storingCreationTime(boolean storing) {
+        this.storeCtime = storing;
         return this;
     }
 
     public LedgerMetadata build() {
-        return new LedgerMetadata(ensembleSize, writeQuorumSize, ackQuorumSize,
-                                  state, lastEntryId, length, ensembles,
-                                  digestType, password, ctime, customMetadata);
+        checkArgument(ensembleSize >= writeQuorumSize, "Write quorum must be less or equal to ensemble size");
+        checkArgument(writeQuorumSize >= ackQuorumSize, "Write quorum must be greater or equal to ack quorum");
+
+        return new LedgerMetadataImpl(metadataFormatVersion,
+                                      ensembleSize, writeQuorumSize, ackQuorumSize,
+                                      state, lastEntryId, length, ensembles,
+                                      digestType, password, ctime, storeCtime,
+                                      customMetadata);
     }
 
 }

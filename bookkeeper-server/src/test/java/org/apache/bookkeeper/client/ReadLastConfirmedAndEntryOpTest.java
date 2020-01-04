@@ -32,6 +32,8 @@ import static org.mockito.Mockito.when;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledByteBufAllocator;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -47,6 +49,7 @@ import org.apache.bookkeeper.client.BKException.Code;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
 import org.apache.bookkeeper.client.ReadLastConfirmedAndEntryOp.LastConfirmedAndEntryCallback;
 import org.apache.bookkeeper.client.api.LastConfirmedAndEntry;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.client.impl.LastConfirmedAndEntryImpl;
 import org.apache.bookkeeper.client.impl.LedgerEntryImpl;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
@@ -99,13 +102,15 @@ public class ReadLastConfirmedAndEntryOpTest {
         internalConf = ClientInternalConf.fromConfig(conf);
 
         // metadata
-        this.ledgerMetadata =
-            new LedgerMetadata(3, 3, 2, DigestType.CRC32, new byte[0]);
         ArrayList<BookieSocketAddress> ensemble = new ArrayList<>(3);
         for (int i = 0; i < 3; i++) {
             ensemble.add(new BookieSocketAddress("127.0.0.1", 3181 + i));
         }
-        this.ledgerMetadata.addEnsemble(0L, ensemble);
+        this.ledgerMetadata = LedgerMetadataBuilder.create()
+            .withEnsembleSize(3).withWriteQuorumSize(2).withAckQuorumSize(2)
+            .withPassword(new byte[0])
+            .withDigestType(DigestType.CRC32.toApiDigestType())
+            .newEnsembleEntry(0L, ensemble).build();
         this.distributionSchedule = new RoundRobinDistributionSchedule(3, 2, 3);
         // schedulers
         this.scheduler = Executors.newSingleThreadScheduledExecutor();
@@ -129,7 +134,7 @@ public class ReadLastConfirmedAndEntryOpTest {
         when(mockLh.getCurrentEnsemble()).thenReturn(ensemble);
         when(mockLh.getLedgerMetadata()).thenReturn(ledgerMetadata);
         when(mockLh.getDistributionSchedule()).thenReturn(distributionSchedule);
-        digestManager = new DummyDigestManager(LEDGERID, false);
+        digestManager = new DummyDigestManager(LEDGERID, false, UnpooledByteBufAllocator.DEFAULT);
         when(mockLh.getDigestManager()).thenReturn(digestManager);
     }
 

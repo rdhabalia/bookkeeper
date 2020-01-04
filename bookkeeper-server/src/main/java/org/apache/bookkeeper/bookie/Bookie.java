@@ -28,9 +28,13 @@ import static org.apache.bookkeeper.bookie.BookKeeperServerStats.LD_LEDGER_SCOPE
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.SettableFuture;
+
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledByteBufAllocator;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FilenameFilter;
@@ -47,11 +51,13 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+
 import org.apache.bookkeeper.bookie.BookieException.BookieIllegalOpException;
 import org.apache.bookkeeper.bookie.BookieException.CookieNotFoundException;
 import org.apache.bookkeeper.bookie.BookieException.DiskPartitionDuplicationException;
@@ -63,6 +69,7 @@ import org.apache.bookkeeper.bookie.Journal.JournalScanner;
 import org.apache.bookkeeper.bookie.LedgerDirsManager.LedgerDirsListener;
 import org.apache.bookkeeper.bookie.LedgerDirsManager.NoWritableLedgerDirException;
 import org.apache.bookkeeper.bookie.stats.BookieStats;
+import org.apache.bookkeeper.bookie.storage.ldb.DbLedgerStorage;
 import org.apache.bookkeeper.common.util.Watcher;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.discover.RegistrationManager;
@@ -133,6 +140,8 @@ public class Bookie extends BookieCriticalThread {
     // Expose Stats
     final StatsLogger statsLogger;
     private final BookieStats bookieStats;
+
+    private final ByteBufAllocator allocator;
 
     /**
      * Exception is thrown when no such a ledger is found in this bookie.
@@ -598,10 +607,71 @@ public class Bookie extends BookieCriticalThread {
 
     public Bookie(ServerConfiguration conf)
             throws IOException, InterruptedException, BookieException {
-        this(conf, NullStatsLogger.INSTANCE);
+        this(conf, NullStatsLogger.INSTANCE, PooledByteBufAllocator.DEFAULT);
     }
 
-    public Bookie(ServerConfiguration conf, StatsLogger statsLogger)
+    private static LedgerStorage buildLedgerStorage(ServerConfiguration conf) throws IOException {
+        // Instantiate the ledger storage implementation
+        String ledgerStorageClass = conf.getLedgerStorageClass();
+        LOG.info("Using ledger storage: {}", ledgerStorageClass);
+        return LedgerStorageFactory.createLedgerStorage(ledgerStorageClass);
+    }
+
+    /**
+     * Initialize LedgerStorage instance without checkpointing for use within the shell
+     * and other RO users.  ledgerStorage must not have already been initialized.
+     *
+     * <p>The caller is responsible for disposing of the ledgerStorage object.
+     *
+     * @param conf Bookie config.
+     * @param ledgerStorage Instance to initialize.
+     * @return Passed ledgerStorage instance
+     * @throws IOException
+     */
+    static LedgerStorage mountLedgerStorageOffline(
+            ServerConfiguration conf,
+            LedgerStorage ledgerStorage) throws IOException {
+        StatsLogger statsLogger = NullStatsLogger.INSTANCE;
+        DiskChecker diskChecker = new DiskChecker(conf.getDiskUsageThreshold(), conf.getDiskUsageWarnThreshold());
+
+        LedgerDirsManager ledgerDirsManager = createLedgerDirsManager(
+                conf, diskChecker, statsLogger.scope(LD_LEDGER_SCOPE));
+        LedgerDirsManager indexDirsManager = createIndexDirsManager(
+                conf, diskChecker, statsLogger.scope(LD_INDEX_SCOPE), ledgerDirsManager);
+
+        if (null == ledgerStorage) {
+            ledgerStorage = buildLedgerStorage(conf);
+        }
+
+        CheckpointSource checkpointSource = new CheckpointSource() {
+            @Override
+            public Checkpoint newCheckpoint() {
+                return Checkpoint.MAX;
+            }
+
+            @Override
+            public void checkpointComplete(Checkpoint checkpoint, boolean compact)
+                    throws IOException {
+            }
+        };
+
+        Checkpointer checkpointer = Checkpointer.NULL;
+
+        ledgerStorage.initialize(
+                conf,
+                null,
+                ledgerDirsManager,
+                indexDirsManager,
+                null,
+                checkpointSource,
+                checkpointer,
+                statsLogger,
+                UnpooledByteBufAllocator.DEFAULT);
+
+        return ledgerStorage;
+    }
+
+    public Bookie(ServerConfiguration conf, StatsLogger statsLogger, ByteBufAllocator allocator)
             throws IOException, InterruptedException, BookieException {
         super("Bookie-" + conf.getBookiePort());
         this.statsLogger = statsLogger;
@@ -614,6 +684,7 @@ public class Bookie extends BookieCriticalThread {
         this.ledgerDirsManager = createLedgerDirsManager(conf, diskChecker, statsLogger.scope(LD_LEDGER_SCOPE));
         this.indexDirsManager = createIndexDirsManager(conf, diskChecker, statsLogger.scope(LD_INDEX_SCOPE),
                                                        this.ledgerDirsManager);
+        this.allocator = allocator;
 
         // instantiate zookeeper client to initialize ledger manager
         this.metadataDriver = instantiateMetadataDriver(conf);
@@ -670,25 +741,30 @@ public class Bookie extends BookieCriticalThread {
         journals = Lists.newArrayList();
         for (int i = 0; i < journalDirectories.size(); i++) {
             journals.add(new Journal(i, journalDirectories.get(i),
-                         conf, ledgerDirsManager, statsLogger.scope(JOURNAL_SCOPE)));
+                    conf, ledgerDirsManager, statsLogger.scope(JOURNAL_SCOPE), allocator));
         }
 
         this.entryLogPerLedgerEnabled = conf.isEntryLogPerLedgerEnabled();
         CheckpointSource checkpointSource = new CheckpointSourceList(journals);
 
-        // Instantiate the ledger storage implementation
-        String ledgerStorageClass = conf.getLedgerStorageClass();
-        LOG.info("Using ledger storage: {}", ledgerStorageClass);
-        ledgerStorage = LedgerStorageFactory.createLedgerStorage(ledgerStorageClass);
+        ledgerStorage = buildLedgerStorage(conf);
+
+        boolean isDbLedgerStorage = ledgerStorage instanceof DbLedgerStorage;
 
         /*
          * with this change https://github.com/apache/bookkeeper/pull/677,
-         * LedgerStorage drives the checkpoint logic. But with multiple entry
-         * logs, checkpoint logic based on a entry log is not possible, hence it
-         * needs to be timebased recurring thing and it is driven by SyncThread.
-         * SyncThread.start does that and it is started in Bookie.start method.
+         * LedgerStorage drives the checkpoint logic.
+         *
+         * <p>There are two exceptions:
+         *
+         * 1) with multiple entry logs, checkpoint logic based on a entry log is
+         *    not possible, hence it needs to be timebased recurring thing and
+         *    it is driven by SyncThread. SyncThread.start does that and it is
+         *    started in Bookie.start method.
+         *
+         * 2) DbLedgerStorage
          */
-        if (entryLogPerLedgerEnabled) {
+        if (entryLogPerLedgerEnabled || isDbLedgerStorage) {
             syncThread = new SyncThread(conf, getLedgerDirsListener(), ledgerStorage, checkpointSource) {
                 @Override
                 public void startCheckpoint(Checkpoint checkpoint) {
@@ -719,7 +795,8 @@ public class Bookie extends BookieCriticalThread {
             stateManager,
             checkpointSource,
             syncThread,
-            statsLogger);
+            statsLogger,
+            allocator);
 
 
         handles = new HandleFactoryImpl(ledgerStorage);
@@ -733,7 +810,7 @@ public class Bookie extends BookieCriticalThread {
     }
 
     void readJournal() throws IOException, BookieException {
-        long startTs = MathUtils.now();
+        long startTs = System.currentTimeMillis();
         JournalScanner scanner = new JournalScanner() {
             @Override
             public void process(int journalVersion, long offset, ByteBuffer recBuff) throws IOException {
@@ -823,7 +900,7 @@ public class Bookie extends BookieCriticalThread {
         for (Journal journal : journals) {
             journal.replay(scanner);
         }
-        long elapsedTs = MathUtils.now() - startTs;
+        long elapsedTs = System.currentTimeMillis() - startTs;
         LOG.info("Finished replaying journal in {} ms.", elapsedTs);
     }
 
@@ -862,7 +939,29 @@ public class Bookie extends BookieCriticalThread {
         } catch (ExecutionException e) {
             LOG.error("Error on executing a fully flush after replaying journals.");
             shutdown(ExitCode.BOOKIE_EXCEPTION);
+            return;
         }
+
+        if (conf.isLocalConsistencyCheckOnStartup()) {
+            LOG.info("Running local consistency check on startup prior to accepting IO.");
+            List<LedgerStorage.DetectedInconsistency> errors = null;
+            try {
+                errors = ledgerStorage.localConsistencyCheck(Optional.empty());
+            } catch (IOException e) {
+                LOG.error("Got a fatal exception while checking store", e);
+                shutdown(ExitCode.BOOKIE_EXCEPTION);
+                return;
+            }
+            if (errors != null && errors.size() > 0) {
+                LOG.error("Bookie failed local consistency check:");
+                for (LedgerStorage.DetectedInconsistency error : errors) {
+                    LOG.error("Ledger {}, entry {}: ", error.getLedgerId(), error.getEntryId(), error.getException());
+                }
+                shutdown(ExitCode.BOOKIE_EXCEPTION);
+                return;
+            }
+        }
+
         LOG.info("Finished reading journal, starting bookie");
 
 
@@ -1198,8 +1297,8 @@ public class Bookie extends BookieCriticalThread {
         }
     }
 
-    static ByteBuf createExplicitLACEntry(long ledgerId, ByteBuf explicitLac) {
-        ByteBuf bb = PooledByteBufAllocator.DEFAULT.directBuffer(8 + 8 + 4 + explicitLac.capacity());
+    private ByteBuf createExplicitLACEntry(long ledgerId, ByteBuf explicitLac) {
+        ByteBuf bb = allocator.directBuffer(8 + 8 + 4 + explicitLac.capacity());
         bb.writeLong(ledgerId);
         bb.writeLong(METAENTRY_ID_LEDGER_EXPLICITLAC);
         bb.writeInt(explicitLac.capacity());
@@ -1358,6 +1457,13 @@ public class Bookie extends BookieCriticalThread {
         return handle.waitForLastAddConfirmedUpdate(previousLAC, watcher);
     }
 
+    public void cancelWaitForLastAddConfirmedUpdate(long ledgerId,
+                                                    Watcher<LastAddConfirmedUpdateNotification> watcher)
+            throws IOException {
+        LedgerDescriptor handle = handles.getReadOnlyHandle(ledgerId);
+        handle.cancelWaitForLastAddConfirmedUpdate(watcher);
+    }
+
     @VisibleForTesting
     public LedgerStorage getLedgerStorage() {
         return ledgerStorage;
@@ -1394,6 +1500,10 @@ public class Bookie extends BookieCriticalThread {
                 wait();
             }
         }
+    }
+
+    public ByteBufAllocator getAllocator() {
+        return allocator;
     }
 
     /**
@@ -1492,7 +1602,7 @@ public class Bookie extends BookieCriticalThread {
         Bookie b = new Bookie(new ServerConfiguration());
         b.start();
         CounterCallback cb = new CounterCallback();
-        long start = MathUtils.now();
+        long start = System.currentTimeMillis();
         for (int i = 0; i < 100000; i++) {
             ByteBuf buff = Unpooled.buffer(1024);
             buff.writeLong(1);
@@ -1501,7 +1611,7 @@ public class Bookie extends BookieCriticalThread {
             b.addEntry(buff, false /* ackBeforeSync */, cb, null, new byte[0]);
         }
         cb.waitZero();
-        long end = MathUtils.now();
+        long end = System.currentTimeMillis();
         System.out.println("Took " + (end - start) + "ms");
     }
 

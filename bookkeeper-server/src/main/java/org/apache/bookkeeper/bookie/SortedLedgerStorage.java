@@ -21,9 +21,14 @@
 package org.apache.bookkeeper.bookie;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.util.concurrent.RateLimiter;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+
 import java.io.IOException;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -69,7 +74,8 @@ public class SortedLedgerStorage
                            StateManager stateManager,
                            CheckpointSource checkpointSource,
                            Checkpointer checkpointer,
-                           StatsLogger statsLogger)
+                           StatsLogger statsLogger,
+                           ByteBufAllocator allocator)
             throws IOException {
 
         interleavedLedgerStorage.initializeWithEntryLogListener(
@@ -83,7 +89,8 @@ public class SortedLedgerStorage
             // uses sorted ledger storage's own entry log listener
             // since it manages entry log rotations and checkpoints.
             this,
-            statsLogger);
+            statsLogger,
+            allocator);
 
         if (conf.isEntryLogPerLedgerEnabled()) {
             this.memTable = new EntryMemTableWithParallelFlusher(conf, checkpointSource, statsLogger);
@@ -221,6 +228,13 @@ public class SortedLedgerStorage
     }
 
     @Override
+    public void cancelWaitForLastAddConfirmedUpdate(long ledgerId,
+                                                    Watcher<LastAddConfirmedUpdateNotification> watcher)
+            throws IOException {
+        interleavedLedgerStorage.cancelWaitForLastAddConfirmedUpdate(ledgerId, watcher);
+    }
+
+    @Override
     public void checkpoint(final Checkpoint checkpoint) throws IOException {
         long numBytesFlushed = memTable.flush(this, checkpoint);
         interleavedLedgerStorage.getEntryLogger().prepareSortedLedgerStorageCheckpoint(numBytesFlushed);
@@ -326,5 +340,25 @@ public class SortedLedgerStorage
     @Override
     public LedgerStorage getUnderlyingLedgerStorage() {
         return interleavedLedgerStorage;
+    }
+
+    @Override
+    public void forceGC() {
+        interleavedLedgerStorage.forceGC();
+    }
+
+    @Override
+    public List<DetectedInconsistency> localConsistencyCheck(Optional<RateLimiter> rateLimiter) throws IOException {
+        return interleavedLedgerStorage.localConsistencyCheck(rateLimiter);
+    }
+
+    @Override
+    public boolean isInForceGC() {
+        return interleavedLedgerStorage.isInForceGC();
+    }
+
+    @Override
+    public List<GarbageCollectionStatus> getGarbageCollectionStatus() {
+        return interleavedLedgerStorage.getGarbageCollectionStatus();
     }
 }

@@ -26,6 +26,8 @@ import java.net.SocketException;
 import java.util.Collections;
 import java.util.Enumeration;
 
+import org.apache.bookkeeper.bookie.storage.ldb.DbLedgerStorage;
+import org.apache.bookkeeper.common.allocator.PoolingPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,6 +55,9 @@ public class TestBKConfiguration {
         confReturn.setGcWaitTime(1000);
         confReturn.setDiskUsageThreshold(0.999f);
         confReturn.setDiskUsageWarnThreshold(0.99f);
+        confReturn.setAllocatorPoolingPolicy(PoolingPolicy.UnpooledHeap);
+        confReturn.setProperty(DbLedgerStorage.WRITE_CACHE_MAX_SIZE_MB, 4);
+        confReturn.setProperty(DbLedgerStorage.READ_AHEAD_CACHE_MAX_SIZE_MB, 4);
         setLoopbackInterfaceAndAllowLoopback(confReturn);
         return confReturn;
     }

@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import org.apache.bookkeeper.client.api.DigestType;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallbackFuture;
@@ -51,11 +53,9 @@ public class LedgerRecovery2Test {
     private static Versioned<LedgerMetadata> setupLedger(ClientContext clientCtx, long ledgerId,
                                               List<BookieSocketAddress> bookies) throws Exception {
         LedgerMetadata md = LedgerMetadataBuilder.create()
-            .withPassword(PASSWD)
+            .withPassword(PASSWD).withDigestType(DigestType.CRC32C)
             .newEnsembleEntry(0, bookies).build();
-        GenericCallbackFuture<Versioned<LedgerMetadata>> mdPromise = new GenericCallbackFuture<>();
-        clientCtx.getLedgerManager().createLedgerMetadata(1L, md, mdPromise);
-        return mdPromise.get();
+        return clientCtx.getLedgerManager().createLedgerMetadata(1L, md).get();
     }
 
     @Test
@@ -125,7 +125,8 @@ public class LedgerRecovery2Test {
         writingBack.get(10, TimeUnit.SECONDS);
 
         ClientUtil.transformMetadata(clientCtx, 1L,
-                                     (metadata) -> LedgerMetadataBuilder.from(metadata).closingAt(-1, 0).build());
+                (metadata) -> LedgerMetadataBuilder.from(metadata)
+                                     .withClosedState().withLastEntryId(-1).withLength(0).build());
 
         // allow recovery to continue
         blocker.complete(null);

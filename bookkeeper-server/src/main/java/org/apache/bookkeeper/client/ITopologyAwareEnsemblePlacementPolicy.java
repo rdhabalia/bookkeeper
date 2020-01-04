@@ -93,7 +93,7 @@ public interface ITopologyAwareEnsemblePlacementPolicy<T extends Node> extends E
      * @return list of bookies forming the ensemble
      * @throws BKException.BKNotEnoughBookiesException
      */
-    List<BookieSocketAddress> newEnsemble(
+    PlacementResult<List<BookieSocketAddress>> newEnsemble(
             int ensembleSize,
             int writeQuorumSize,
             int ackQuorumSize,

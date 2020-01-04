@@ -25,18 +25,17 @@ import static org.apache.bookkeeper.meta.MetadataDrivers.runFunctionWithRegistra
 import static org.apache.bookkeeper.tools.cli.helpers.CommandHelpers.getBookieSocketAddrStringRepresentation;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Optional;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.DefaultThreadFactory;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.Serializable;
 import java.math.RoundingMode;
@@ -63,6 +62,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
@@ -90,14 +90,15 @@ import org.apache.bookkeeper.client.BookKeeperAdmin;
 import org.apache.bookkeeper.client.BookieInfoReader.BookieInfo;
 import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerHandle;
-import org.apache.bookkeeper.client.LedgerMetadata;
 import org.apache.bookkeeper.client.UpdateLedgerOp;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.common.annotation.InterfaceAudience.Private;
 import org.apache.bookkeeper.common.util.OrderedExecutor;
 import org.apache.bookkeeper.conf.ClientConfiguration;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.discover.RegistrationManager;
 import org.apache.bookkeeper.meta.LedgerManager;
+import org.apache.bookkeeper.meta.LedgerMetadataSerDe;
 import org.apache.bookkeeper.meta.LedgerUnderreplicationManager;
 import org.apache.bookkeeper.meta.UnderreplicatedLedger;
 import org.apache.bookkeeper.meta.zk.ZKMetadataDriverBase;
@@ -105,8 +106,6 @@ import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookieClient;
 import org.apache.bookkeeper.proto.BookieClientImpl;
 import org.apache.bookkeeper.proto.BookieProtocol;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallbackFuture;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.Processor;
 import org.apache.bookkeeper.replication.AuditorElector;
 import org.apache.bookkeeper.replication.ReplicationException;
@@ -145,6 +144,7 @@ import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.mutable.MutableBoolean;
+import org.apache.commons.lang.mutable.MutableLong;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.AsyncCallback.VoidCallback;
@@ -206,6 +206,7 @@ public class BookieShell implements Tool {
     static final String CMD_GENERATE_COOKIE = "cookie_generate";
 
     static final String CMD_HELP = "help";
+    static final String CMD_LOCALCONSISTENCYCHECK = "localconsistencycheck";
 
     final ServerConfiguration bkConf = new ServerConfiguration();
     File[] indexDirectories;
@@ -238,6 +239,14 @@ public class BookieShell implements Tool {
         String description();
 
         void printUsage();
+    }
+
+    void printInfoLine(String s) {
+        System.out.println(s);
+    }
+
+    void printErrorLine(String s) {
+        System.err.println(s);
     }
 
     abstract class MyCommand implements Command {
@@ -718,7 +727,7 @@ public class BookieShell implements Tool {
         public int runCmd(CommandLine cmdLine) throws Exception {
             String[] leftArgs = cmdLine.getArgs();
             if (leftArgs.length <= 0) {
-                System.err.println("ERROR: missing ledger id");
+                printErrorLine("ERROR: missing ledger id");
                 printUsage();
                 return -1;
             }
@@ -731,7 +740,7 @@ public class BookieShell implements Tool {
             try {
                 ledgerId = ledgerIdFormatter.readLedgerId(leftArgs[0]);
             } catch (IllegalArgumentException iae) {
-                System.err.println("ERROR: invalid ledger id " + leftArgs[0]);
+                printErrorLine("ERROR: invalid ledger id " + leftArgs[0]);
                 printUsage();
                 return -1;
             }
@@ -740,19 +749,69 @@ public class BookieShell implements Tool {
                 // dump ledger info
                 try {
                     DbLedgerStorage.readLedgerIndexEntries(ledgerId, bkConf,
-                            (currentEntry, entryLogId, position) -> System.out.println(
+                            (currentEntry, entryLogId, position) -> printInfoLine(
                                     "entry " + currentEntry + "\t:\t(log: " + entryLogId + ", pos: " + position + ")"));
                 } catch (IOException e) {
                     System.err.printf("ERROR: initializing dbLedgerStorage %s", e.getMessage());
                     return -1;
                 }
-            } else {
+            } else if ((bkConf.getLedgerStorageClass().equals(SortedLedgerStorage.class.getName())
+                    || bkConf.getLedgerStorageClass().equals(InterleavedLedgerStorage.class.getName()))) {
+                ServerConfiguration conf = new ServerConfiguration(bkConf);
+                InterleavedLedgerStorage interleavedStorage = new InterleavedLedgerStorage();
+                Bookie.mountLedgerStorageOffline(conf, interleavedStorage);
+
                 if (printMeta) {
                     // print meta
-                    readLedgerMeta(ledgerId);
+                    printInfoLine("===== LEDGER: " + ledgerIdFormatter.formatLedgerId(ledgerId) + " =====");
+                    LedgerCache.LedgerIndexMetadata meta = interleavedStorage.readLedgerIndexMetadata(ledgerId);
+                    printInfoLine("master key  : " + meta.getMasterKeyHex());
+
+                    long size = meta.size;
+                    if (size % 8 == 0) {
+                        printInfoLine("size        : " + size);
+                    } else {
+                        printInfoLine("size : " + size
+                                + " (not aligned with 8, may be corrupted or under flushing now)");
+                    }
+
+                    printInfoLine("entries     : " + (size / 8));
+                    printInfoLine("isFenced    : " + meta.fenced);
                 }
-                // dump ledger info
-                readLedgerIndexEntries(ledgerId);
+
+                try {
+                    // dump ledger info
+                    printInfoLine("===== LEDGER: " + ledgerIdFormatter.formatLedgerId(ledgerId) + " =====");
+                    for (LedgerCache.PageEntries page : interleavedStorage.getIndexEntries(ledgerId)) {
+                        final MutableLong curEntry = new MutableLong(page.getFirstEntry());
+                        try (LedgerEntryPage lep = page.getLEP()){
+                            lep.getEntries((entry, offset) -> {
+                                while (curEntry.longValue() < entry) {
+                                    printInfoLine("entry " + curEntry + "\t:\tN/A");
+                                    curEntry.increment();
+                                }
+                                long entryLogId = offset >> 32L;
+                                long pos = offset & 0xffffffffL;
+                                printInfoLine("entry " + curEntry + "\t:\t(log:" + entryLogId + ", pos: " + pos + ")");
+                                curEntry.increment();
+                                return true;
+                            });
+                        } catch (IOException ie) {
+                            printInfoLine("Failed to read index page @ " + page.getFirstEntry()
+                                    + ", the index file may be corrupted : "
+                                    + ie.getMessage());
+                            return 1;
+                        }
+
+                        while (curEntry.longValue() < page.getLastEntry()) {
+                            printInfoLine("entry " + curEntry + "\t:\tN/A");
+                            curEntry.increment();
+                        }
+                    }
+                } catch (IOException ie) {
+                    LOG.error("Failed to read index page");
+                    return 1;
+                }
             }
 
             return 0;
@@ -860,8 +919,8 @@ public class BookieShell implements Tool {
                     ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor(
                         new DefaultThreadFactory("BookKeeperClientSchedulerPool"));
 
-                    BookieClient bookieClient = new BookieClientImpl(conf, eventLoopGroup, executor,
-                        scheduler, NullStatsLogger.INSTANCE);
+                    BookieClient bookieClient = new BookieClientImpl(conf, eventLoopGroup,
+                            UnpooledByteBufAllocator.DEFAULT, executor, scheduler, NullStatsLogger.INSTANCE);
 
                     LongStream.range(firstEntry, lastEntry).forEach(entryId -> {
                         CompletableFuture<Void> future = new CompletableFuture<>();
@@ -1024,41 +1083,45 @@ public class BookieShell implements Tool {
                     final CountDownLatch processDone = new CountDownLatch(1);
 
                     Processor<Long> ledgerProcessor = new Processor<Long>() {
-                        @Override
-                        public void process(Long ledgerId, VoidCallback cb) {
-                            if (!printMeta && (bookieAddress == null)) {
-                                printLedgerMetadata(ledgerId, null, false);
-                                cb.processResult(BKException.Code.OK, null, null);
-                            } else {
-                                GenericCallback<Versioned<LedgerMetadata>> gencb = (rc, ledgerMetadata) -> {
-                                    if (rc == BKException.Code.OK) {
-                                        if ((bookieAddress == null)
-                                            || BookKeeperAdmin.areEntriesOfLedgerStoredInTheBookie(
-                                                    ledgerId, bookieAddress, ledgerMetadata.getValue())) {
-                                            /*
-                                             * the print method has to be in
-                                             * synchronized scope, otherwise
-                                             * output of printLedgerMetadata
-                                             * could interleave since this
-                                             * callback for different
-                                             * ledgers can happen in
-                                             * different threads.
-                                             */
-                                            synchronized (BookieShell.this) {
-                                                printLedgerMetadata(ledgerId, ledgerMetadata.getValue(), printMeta);
-                                            }
-                                        }
-                                    } else if (rc == BKException.Code.NoSuchLedgerExistsException) {
-                                        rc = BKException.Code.OK;
-                                    } else {
-                                        LOG.error("Unable to read the ledger: " + ledgerId + " information");
-                                    }
-                                    cb.processResult(rc, null, null);
-                                };
-                                ledgerManager.readLedgerMetadata(ledgerId, gencb);
+                            @Override
+                            public void process(Long ledgerId, VoidCallback cb) {
+                                if (!printMeta && (bookieAddress == null)) {
+                                    printLedgerMetadata(ledgerId, null, false);
+                                    cb.processResult(BKException.Code.OK, null, null);
+                                } else {
+                                    ledgerManager.readLedgerMetadata(ledgerId).whenComplete(
+                                            (metadata, exception) -> {
+                                                if (exception == null) {
+                                                    if ((bookieAddress == null)
+                                                        || BookKeeperAdmin.areEntriesOfLedgerStoredInTheBookie(
+                                                                ledgerId, bookieAddress, metadata.getValue())) {
+                                                        /*
+                                                         * the print method has to be in
+                                                         * synchronized scope, otherwise
+                                                         * output of printLedgerMetadata
+                                                         * could interleave since this
+                                                         * callback for different
+                                                         * ledgers can happen in
+                                                         * different threads.
+                                                         */
+                                                        synchronized (BookieShell.this) {
+                                                            printLedgerMetadata(ledgerId, metadata.getValue(),
+                                                                                printMeta);
+                                                        }
+                                                    }
+                                                    cb.processResult(BKException.Code.OK, null, null);
+                                                } else if (BKException.getExceptionCode(exception)
+                                                           == BKException.Code.NoSuchLedgerExistsException) {
+                                                    cb.processResult(BKException.Code.OK, null, null);
+                                                } else {
+                                                    LOG.error("Unable to read the ledger: {} information", ledgerId);
+                                                    cb.processResult(BKException.getExceptionCode(exception),
+                                                                     null, null);
+                                                }
+                                            });
+                                }
                             }
-                        }
-                    };
+                        };
 
                     ledgerManager.asyncProcessLedgers(ledgerProcessor, new AsyncCallback.VoidCallback() {
                         @Override
@@ -1103,7 +1166,7 @@ public class BookieShell implements Tool {
     void printLedgerMetadata(long ledgerId, LedgerMetadata md, boolean printMeta) {
         System.out.println("ledgerID: " + ledgerIdFormatter.formatLedgerId(ledgerId));
         if (printMeta) {
-            System.out.println(new String(md.serialize(), UTF_8));
+            System.out.println(md.toString());
         }
     }
 
@@ -1112,6 +1175,7 @@ public class BookieShell implements Tool {
      */
     class LedgerMetadataCmd extends MyCommand {
         Options lOpts = new Options();
+        LedgerMetadataSerDe serDe = new LedgerMetadataSerDe();
 
         LedgerMetadataCmd() {
             super(CMD_LEDGERMETADATA);
@@ -1135,21 +1199,16 @@ public class BookieShell implements Tool {
             runFunctionWithLedgerManagerFactory(bkConf, mFactory -> {
                 try (LedgerManager m = mFactory.newLedgerManager()) {
                     if (cmdLine.hasOption("dumptofile")) {
-                        GenericCallbackFuture<Versioned<LedgerMetadata>> cb = new GenericCallbackFuture<>();
-                        m.readLedgerMetadata(lid, cb);
+                        Versioned<LedgerMetadata> md = m.readLedgerMetadata(lid).join();
                         Files.write(FileSystems.getDefault().getPath(cmdLine.getOptionValue("dumptofile")),
-                                    cb.join().getValue().serialize());
+                                    serDe.serialize(md.getValue()));
                     } else if (cmdLine.hasOption("restorefromfile")) {
                         byte[] serialized = Files.readAllBytes(
                                 FileSystems.getDefault().getPath(cmdLine.getOptionValue("restorefromfile")));
-                        LedgerMetadata md = LedgerMetadata.parseConfig(serialized, Optional.absent());
-                        GenericCallbackFuture<Versioned<LedgerMetadata>> cb = new GenericCallbackFuture<>();
-                        m.createLedgerMetadata(lid, md, cb);
-                        cb.join();
+                        LedgerMetadata md = serDe.parseConfig(serialized, Optional.empty());
+                        m.createLedgerMetadata(lid, md).join();
                     } else {
-                        GenericCallbackFuture<Versioned<LedgerMetadata>> cb = new GenericCallbackFuture<>();
-                        m.readLedgerMetadata(lid, cb);
-                        printLedgerMetadata(lid, cb.get().getValue(), true);
+                        printLedgerMetadata(lid, m.readLedgerMetadata(lid).get().getValue(), true);
                     }
                 } catch (Exception e) {
                     throw new UncheckedExecutionException(e);
@@ -1168,6 +1227,51 @@ public class BookieShell implements Tool {
         @Override
         String getUsage() {
             return "ledgermetadata -ledgerid <ledgerid> [--dump-to-file FILENAME|--restore-from-file FILENAME]";
+        }
+
+        @Override
+        Options getOptions() {
+            return lOpts;
+        }
+    }
+
+    /**
+     * Check local storage for inconsistencies.
+     */
+    class LocalConsistencyCheck extends MyCommand {
+        Options lOpts = new Options();
+
+        LocalConsistencyCheck() {
+            super(CMD_LOCALCONSISTENCYCHECK);
+        }
+
+        @Override
+        public int runCmd(CommandLine cmdLine) throws Exception {
+            LOG.info("=== Performing local consistency check ===");
+            ServerConfiguration conf = new ServerConfiguration(bkConf);
+            LedgerStorage ledgerStorage = Bookie.mountLedgerStorageOffline(conf, null);
+            List <LedgerStorage.DetectedInconsistency> errors = ledgerStorage.localConsistencyCheck(
+                    java.util.Optional.empty());
+            if (errors.size() > 0) {
+                LOG.info("=== Check returned errors: ===");
+                for (LedgerStorage.DetectedInconsistency error : errors) {
+                    LOG.error("Ledger {}, entry {}: ", error.getLedgerId(), error.getEntryId(), error.getException());
+                }
+                return 1;
+            } else {
+                LOG.info("=== Check passed ===");
+                return 0;
+            }
+        }
+
+        @Override
+        String getDescription() {
+            return "Validate Ledger Storage internal metadata";
+        }
+
+        @Override
+        String getUsage() {
+            return "localconsistencycheck";
         }
 
         @Override
@@ -2624,41 +2728,12 @@ public class BookieShell implements Tool {
         int runCmd(CommandLine cmdLine) throws Exception {
             LOG.info("=== Converting to DbLedgerStorage ===");
             ServerConfiguration conf = new ServerConfiguration(bkConf);
-            LedgerDirsManager ledgerDirsManager = new LedgerDirsManager(bkConf, bkConf.getLedgerDirs(),
-                    new DiskChecker(bkConf.getDiskUsageThreshold(), bkConf.getDiskUsageWarnThreshold()));
-            LedgerDirsManager ledgerIndexManager = new LedgerDirsManager(bkConf, bkConf.getLedgerDirs(),
-                    new DiskChecker(bkConf.getDiskUsageThreshold(), bkConf.getDiskUsageWarnThreshold()));
 
             InterleavedLedgerStorage interleavedStorage = new InterleavedLedgerStorage();
+            Bookie.mountLedgerStorageOffline(conf, interleavedStorage);
+
             DbLedgerStorage dbStorage = new DbLedgerStorage();
-
-            CheckpointSource checkpointSource = new CheckpointSource() {
-                    @Override
-                    public Checkpoint newCheckpoint() {
-                        return Checkpoint.MAX;
-                    }
-
-                    @Override
-                    public void checkpointComplete(Checkpoint checkpoint, boolean compact)
-                            throws IOException {
-                    }
-                };
-            Checkpointer checkpointer = new Checkpointer() {
-                @Override
-                public void startCheckpoint(Checkpoint checkpoint) {
-                    // No-op
-                }
-
-                @Override
-                public void start() {
-                    // no-op
-                }
-            };
-
-            interleavedStorage.initialize(conf, null, ledgerDirsManager, ledgerIndexManager,
-                    null, checkpointSource, checkpointer, NullStatsLogger.INSTANCE);
-            dbStorage.initialize(conf, null, ledgerDirsManager, ledgerIndexManager, null,
-                    checkpointSource, checkpointer, NullStatsLogger.INSTANCE);
+            Bookie.mountLedgerStorageOffline(conf, dbStorage);
 
             int convertedLedgers = 0;
             for (long ledgerId : interleavedStorage.getActiveLedgersInRange(0, Long.MAX_VALUE)) {
@@ -2666,13 +2741,13 @@ public class BookieShell implements Tool {
                     LOG.debug("Converting ledger {}", ledgerIdFormatter.formatLedgerId(ledgerId));
                 }
 
-                FileInfo fi = getFileInfo(ledgerId);
+                LedgerCache.LedgerIndexMetadata fi = interleavedStorage.readLedgerIndexMetadata(ledgerId);
 
-                Iterable<SortedMap<Long, Long>> entries = getLedgerIndexEntries(ledgerId);
+                LedgerCache.PageEntriesIterable pages = interleavedStorage.getIndexEntries(ledgerId);
 
-                long numberOfEntries = dbStorage.addLedgerToIndex(ledgerId, fi.isFenced(), fi.getMasterKey(), entries);
+                long numberOfEntries = dbStorage.addLedgerToIndex(ledgerId, fi.fenced, fi.masterKey, pages);
                 if (LOG.isDebugEnabled()) {
-                    LOG.debug("   -- done. fenced={} entries={}", fi.isFenced(), numberOfEntries);
+                    LOG.debug("   -- done. fenced={} entries={}", fi.fenced, numberOfEntries);
                 }
 
                 // Remove index from old storage
@@ -2752,9 +2827,9 @@ public class BookieShell implements Tool {
             };
 
             dbStorage.initialize(conf, null, ledgerDirsManager, ledgerIndexManager, null,
-                        checkpointSource, checkpointer, NullStatsLogger.INSTANCE);
+                        checkpointSource, checkpointer, NullStatsLogger.INSTANCE, PooledByteBufAllocator.DEFAULT);
             interleavedStorage.initialize(conf, null, ledgerDirsManager, ledgerIndexManager,
-                    null, checkpointSource, checkpointer, NullStatsLogger.INSTANCE);
+                    null, checkpointSource, checkpointer, NullStatsLogger.INSTANCE, PooledByteBufAllocator.DEFAULT);
             LedgerCache interleavedLedgerCache = interleavedStorage.ledgerCache;
 
             int convertedLedgers = 0;
@@ -2919,6 +2994,7 @@ public class BookieShell implements Tool {
         commands.put(CMD_WHOISAUDITOR, new WhoIsAuditorCmd());
         commands.put(CMD_WHATISINSTANCEID, new WhatIsInstanceId());
         commands.put(CMD_LEDGERMETADATA, new LedgerMetadataCmd());
+        commands.put(CMD_LOCALCONSISTENCYCHECK, new LocalConsistencyCheck());
         commands.put(CMD_SIMPLETEST, new SimpleTestCmd());
         commands.put(CMD_BOOKIESANITYTEST, new BookieSanityTestCmd());
         commands.put(CMD_READLOG, new ReadLogCmd());
@@ -3121,23 +3197,6 @@ public class BookieShell implements Tool {
         return lf;
     }
 
-    /**
-     * Get FileInfo for a specified ledger.
-     *
-     * @param ledgerId Ledger Id
-     * @return read only file info instance
-     */
-    ReadOnlyFileInfo getFileInfo(long ledgerId) throws IOException {
-        File ledgerFile = getLedgerFile(ledgerId);
-        if (null == ledgerFile) {
-            throw new FileNotFoundException("No index file found for ledger " + ledgerId
-                    + ". It may be not flushed yet.");
-        }
-        ReadOnlyFileInfo fi = new ReadOnlyFileInfo(ledgerFile, null);
-        fi.readHeader();
-        return fi;
-    }
-
     private synchronized void initEntryLogger() throws IOException {
         if (null == entryLogger) {
             // provide read only entry logger
@@ -3183,77 +3242,6 @@ public class BookieShell implements Tool {
     /// Bookie Shell Commands
     ///
 
-    /**
-     * Read ledger meta.
-     *
-     * @param ledgerId Ledger Id
-     */
-    protected void readLedgerMeta(long ledgerId) throws Exception {
-        System.out.println("===== LEDGER: " + ledgerIdFormatter.formatLedgerId(ledgerId) + " =====");
-        FileInfo fi = getFileInfo(ledgerId);
-        byte[] masterKey = fi.getMasterKey();
-        if (null == masterKey) {
-            System.out.println("master key  : NULL");
-        } else {
-            System.out.println("master key  : " + bytes2Hex(fi.getMasterKey()));
-        }
-        long size = fi.size();
-        if (size % 8 == 0) {
-            System.out.println("size        : " + size);
-        } else {
-            System.out.println("size : " + size + " (not aligned with 8, may be corrupted or under flushing now)");
-        }
-        System.out.println("entries     : " + (size / 8));
-        System.out.println("isFenced    : " + fi.isFenced());
-    }
-
-    /**
-     * Read ledger index entries.
-     *
-     * @param ledgerId Ledger Id
-     * @throws IOException
-     */
-    protected void readLedgerIndexEntries(long ledgerId) throws IOException {
-        System.out.println("===== LEDGER: " + ledgerIdFormatter.formatLedgerId(ledgerId) + " =====");
-        FileInfo fi = getFileInfo(ledgerId);
-        long size = fi.size();
-        System.out.println("size        : " + size);
-        long curSize = 0;
-        long curEntry = 0;
-        LedgerEntryPage lep = new LedgerEntryPage(pageSize, entriesPerPage);
-        lep.usePage();
-        try {
-            while (curSize < size) {
-                lep.setLedgerAndFirstEntry(ledgerId, curEntry);
-                lep.readPage(fi);
-
-                // process a page
-                for (int i = 0; i < entriesPerPage; i++) {
-                    long offset = lep.getOffset(i * 8);
-                    if (0 == offset) {
-                        System.out.println("entry " + curEntry + "\t:\tN/A");
-                    } else {
-                        long entryLogId = offset >> 32L;
-                        long pos = offset & 0xffffffffL;
-                        System.out.println("entry " + curEntry + "\t:\t(log:" + entryLogId + ", pos: " + pos + ")");
-                    }
-                    ++curEntry;
-                }
-
-                curSize += pageSize;
-            }
-        } catch (IOException ie) {
-            LOG.error("Failed to read index page : ", ie);
-            if (curSize + pageSize < size) {
-                System.out.println("Failed to read index page @ " + curSize + ", the index file may be corrupted : "
-                        + ie.getMessage());
-            } else {
-                System.out.println("Failed to read last index page @ " + curSize + ", the index file may be corrupted "
-                        + "or last index page is not fully flushed yet : " + ie.getMessage());
-            }
-        }
-    }
-
     protected void printEntryLogMetadata(long logId) throws IOException {
         LOG.info("Print entryLogMetadata of entrylog {} ({}.log)", logId, Long.toHexString(logId));
         initEntryLogger();
@@ -3262,67 +3250,6 @@ public class BookieShell implements Tool {
             LOG.info("--------- Lid={}, TotalSizeOfEntriesOfLedger={}  ---------",
                     ledgerIdFormatter.formatLedgerId(ledgerId), size);
         });
-    }
-
-    /**
-     * Get an iterable over pages of entries and locations for a ledger.
-     *
-     * @param ledgerId
-     * @return
-     * @throws IOException
-     */
-    protected Iterable<SortedMap<Long, Long>> getLedgerIndexEntries(final long ledgerId) throws IOException {
-        final FileInfo fi = getFileInfo(ledgerId);
-        final long size = fi.size();
-
-        final LedgerEntryPage lep = new LedgerEntryPage(pageSize, entriesPerPage);
-        lep.usePage();
-
-        final Iterator<SortedMap<Long, Long>> iterator = new Iterator<SortedMap<Long, Long>>() {
-            long curSize = 0;
-            long curEntry = 0;
-
-            @Override
-            public boolean hasNext() {
-                return curSize < size;
-            }
-
-            @Override
-            public SortedMap<Long, Long> next() {
-                SortedMap<Long, Long> entries = Maps.newTreeMap();
-                lep.setLedgerAndFirstEntry(ledgerId, curEntry);
-                try {
-                    lep.readPage(fi);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-
-                // process a page
-                for (int i = 0; i < entriesPerPage; i++) {
-                    long offset = lep.getOffset(i * 8);
-                    if (offset != 0) {
-                        entries.put(curEntry, offset);
-                    }
-                    ++curEntry;
-                }
-
-                curSize += pageSize;
-                return entries;
-            }
-
-            @Override
-            public void remove() {
-                throw new RuntimeException("Cannot remove");
-            }
-
-        };
-
-        return new Iterable<SortedMap<Long, Long>>() {
-            @Override
-            public Iterator<SortedMap<Long, Long>> iterator() {
-                return iterator;
-            }
-        };
     }
 
     /**

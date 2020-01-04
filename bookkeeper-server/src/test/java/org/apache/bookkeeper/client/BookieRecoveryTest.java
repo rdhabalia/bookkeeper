@@ -20,7 +20,6 @@
  */
 package org.apache.bookkeeper.client;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
@@ -42,14 +41,13 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.bookkeeper.client.AsyncCallback.RecoverCallback;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.conf.ClientConfiguration;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookieProtocol;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.ReadEntryCallback;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
-import org.apache.bookkeeper.versioning.Versioned;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -265,7 +263,7 @@ public class BookieRecoveryTest extends BookKeeperClusterTestCase {
         for (int i = 0; i < numEntries; i++) {
             lh.addEntry(data);
         }
-        BookieSocketAddress bookieToKill = lh.getLedgerMetadata().getEnsemble(numEntries - 1).get(1);
+        BookieSocketAddress bookieToKill = lh.getLedgerMetadata().getEnsembleAt(numEntries - 1).get(1);
         killBookie(bookieToKill);
         startNewBookie();
         for (int i = 0; i < numEntries; i++) {
@@ -273,7 +271,7 @@ public class BookieRecoveryTest extends BookKeeperClusterTestCase {
         }
         bkAdmin.recoverBookieData(bookieToKill);
         // fail another bookie to cause ensemble change again
-        bookieToKill = lh.getLedgerMetadata().getEnsemble(2 * numEntries - 1).get(1);
+        bookieToKill = lh.getLedgerMetadata().getEnsembleAt(2 * numEntries - 1).get(1);
         ServerConfiguration confOfKilledBookie = killBookie(bookieToKill);
         startNewBookie();
         for (int i = 0; i < numEntries; i++) {
@@ -559,28 +557,7 @@ public class BookieRecoveryTest extends BookKeeperClusterTestCase {
     }
 
     private LedgerMetadata getLedgerMetadata(LedgerHandle lh) throws Exception {
-        final SyncLedgerMetaObject syncObj = new SyncLedgerMetaObject();
-        bkc.getLedgerManager().readLedgerMetadata(lh.getId(), new GenericCallback<Versioned<LedgerMetadata>>() {
-
-            @Override
-            public void operationComplete(int rc, Versioned<LedgerMetadata> result) {
-                synchronized (syncObj) {
-                    syncObj.rc = rc;
-                    syncObj.meta = result.getValue();
-                    syncObj.value = true;
-                    syncObj.notify();
-                }
-            }
-
-        });
-
-        synchronized (syncObj) {
-            while (!syncObj.value) {
-                syncObj.wait();
-            }
-        }
-        assertEquals(BKException.Code.OK, syncObj.rc);
-        return syncObj.meta;
+        return bkc.getLedgerManager().readLedgerMetadata(lh.getId()).get().getValue();
     }
 
     private boolean findDupesInEnsembles(List<LedgerHandle> lhs) throws Exception {

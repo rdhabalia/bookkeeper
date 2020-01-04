@@ -217,6 +217,12 @@ public class InterleavedStorageRegenerateIndexOp {
             throw new UnsupportedOperationException();
         }
         @Override
+        public void cancelWaitForLastAddConfirmedUpdate(long ledgerId,
+                                                        Watcher<LastAddConfirmedUpdateNotification> watcher)
+                throws IOException {
+            throw new UnsupportedOperationException();
+        }
+        @Override
         public void deleteLedger(long ledgerId) throws IOException {
         }
         @Override
@@ -224,6 +230,14 @@ public class InterleavedStorageRegenerateIndexOp {
         }
         @Override
         public ByteBuf getExplicitLac(long ledgerId) {
+            throw new UnsupportedOperationException();
+        }
+        @Override
+        public PageEntriesIterable listEntries(long ledgerId) throws IOException {
+            throw new UnsupportedOperationException();
+        }
+        @Override
+        public LedgerIndexMetadata readLedgerIndexMetadata(long ledgerId) throws IOException {
             throw new UnsupportedOperationException();
         }
     }

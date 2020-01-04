@@ -22,6 +22,7 @@ import com.google.common.annotations.VisibleForTesting;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.bookkeeper.client.AsyncCallback.AddCallback;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.ReadEntryListener;
 import org.apache.bookkeeper.proto.checksum.DigestManager.RecoveryData;
 import org.slf4j.Logger;
@@ -104,7 +105,7 @@ class LedgerRecoveryOp implements ReadEntryListener, AddCallback {
                             }
                             // keep a copy of ledger metadata before proceeding
                             // ledger recovery
-                            metadataForRecovery = new LedgerMetadata(lh.getLedgerMetadata());
+                            metadataForRecovery = lh.getLedgerMetadata();
                             doRecoveryRead();
                         } else if (rc == BKException.Code.UnauthorizedAccessException) {
                             submitCallback(rc);

@@ -23,6 +23,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
 import java.util.Enumeration;
@@ -33,6 +34,7 @@ import java.util.SortedMap;
 import java.util.concurrent.CountDownLatch;
 
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.client.api.WriteFlag;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
@@ -234,18 +236,17 @@ public class TestLedgerFragmentReplication extends BookKeeperClusterTestCase {
     @Test
     public void testSplitIntoSubFragmentsWithDifferentFragmentBoundaries()
             throws Exception {
-        LedgerMetadata metadata = new LedgerMetadata(3, 3, 3, TEST_DIGEST_TYPE,
-                TEST_PSSWD) {
-            @Override
-            List<BookieSocketAddress> getEnsemble(long entryId) {
-                return null;
-            }
+        List<BookieSocketAddress> ensemble = Lists.newArrayList(
+                new BookieSocketAddress("192.0.2.1", 1234),
+                new BookieSocketAddress("192.0.2.2", 1234),
+                new BookieSocketAddress("192.0.2.3", 1234));
+        LedgerMetadata metadata = LedgerMetadataBuilder.create()
+            .withEnsembleSize(3).withWriteQuorumSize(3).withAckQuorumSize(3)
+            .withPassword(TEST_PSSWD).withDigestType(TEST_DIGEST_TYPE.toApiDigestType())
+            .withClosedState().withLastEntryId(-1).withLength(0)
+            .newEnsembleEntry(0L, ensemble)
+            .build();
 
-            @Override
-            public boolean isClosed() {
-                return true;
-            }
-        };
         LedgerHandle lh = new LedgerHandle(bkc.getClientCtx(), 0,
                                            new Versioned<>(metadata, new LongVersion(0L)),
                                            TEST_DIGEST_TYPE,

@@ -25,8 +25,9 @@ import java.util.StringTokenizer;
 
 import org.apache.bookkeeper.util.Shell.ShellCommandExecutor;
 import org.apache.commons.configuration.Configuration;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.apache.commons.lang.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class implements the {@link DNSToSwitchMapping} interface using a
@@ -129,7 +130,7 @@ public final class ScriptBasedMapping extends CachedDNSToSwitchMapping {
     private static final class RawScriptBasedMapping extends AbstractDNSToSwitchMapping {
         private String scriptName;
         private int maxArgs; //max hostnames per call of the script
-        private static final Log LOG = LogFactory.getLog(ScriptBasedMapping.class);
+        private static final Logger LOG = LoggerFactory.getLogger(ScriptBasedMapping.class);
 
         /**
          * Set the configuration and extract the configuration parameters of interest.
@@ -139,8 +140,14 @@ public final class ScriptBasedMapping extends CachedDNSToSwitchMapping {
         public void setConf(Configuration conf) {
             super.setConf(conf);
             if (conf != null) {
-                scriptName = conf.getString(SCRIPT_FILENAME_KEY);
-                maxArgs = conf.getInt(SCRIPT_ARG_COUNT_KEY, DEFAULT_ARG_COUNT);
+                String scriptNameConfValue = conf.getString(SCRIPT_FILENAME_KEY);
+                if (StringUtils.isNotBlank(scriptNameConfValue)) {
+                    scriptName = scriptNameConfValue;
+                    maxArgs = conf.getInt(SCRIPT_ARG_COUNT_KEY, DEFAULT_ARG_COUNT);
+                } else {
+                    scriptName = null;
+                    maxArgs = 0;
+                }
             } else {
                 scriptName = null;
                 maxArgs = 0;
@@ -233,7 +240,7 @@ public final class ScriptBasedMapping extends CachedDNSToSwitchMapping {
                     s.execute();
                     allOutput.append(s.getOutput()).append(" ");
                 } catch (Exception e) {
-                    LOG.warn("Exception running " + s, e);
+                    LOG.warn("Exception running: {} Exception message: {}", s, e.getMessage());
                     return null;
                 }
                 loopCount++;

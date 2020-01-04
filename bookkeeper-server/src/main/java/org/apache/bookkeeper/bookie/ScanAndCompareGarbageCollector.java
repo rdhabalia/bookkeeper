@@ -21,8 +21,7 @@
 
 package org.apache.bookkeeper.bookie;
 
-import static org.apache.bookkeeper.bookie.BookKeeperServerStats.ACTIVE_LEDGER_COUNT;
-import static org.apache.bookkeeper.bookie.BookKeeperServerStats.DELETED_LEDGER_COUNT;
+import static org.apache.bookkeeper.common.concurrent.FutureUtils.result;
 
 import com.google.common.collect.Sets;
 import java.io.IOException;
@@ -33,9 +32,7 @@ import java.util.SortedMap;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.bookkeeper.client.BKException;
-import org.apache.bookkeeper.client.LedgerMetadata;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.meta.LedgerManager.LedgerRange;
@@ -43,13 +40,8 @@ import org.apache.bookkeeper.meta.LedgerManager.LedgerRangeIterator;
 import org.apache.bookkeeper.meta.ZkLedgerUnderreplicationManager;
 import org.apache.bookkeeper.meta.zk.ZKMetadataDriverBase;
 import org.apache.bookkeeper.net.BookieSocketAddress;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
-import org.apache.bookkeeper.stats.Counter;
-import org.apache.bookkeeper.stats.Gauge;
 import org.apache.bookkeeper.stats.StatsLogger;
-import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.ZkUtils;
-import org.apache.bookkeeper.versioning.Versioned;
 import org.apache.bookkeeper.zookeeper.ZooKeeperClient;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
@@ -73,7 +65,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p>TODO: eliminate the direct usage of zookeeper here {@link https://github.com/apache/bookkeeper/issues/1331}
  */
-public class ScanAndCompareGarbageCollector implements GarbageCollector{
+public class ScanAndCompareGarbageCollector implements GarbageCollector {
 
     static final Logger LOG = LoggerFactory.getLogger(ScanAndCompareGarbageCollector.class);
     static final int MAX_CONCURRENT_ZK_REQUESTS = 1000;
@@ -90,7 +82,6 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
     private final String zkLedgersRootPath;
     private final boolean verifyMetadataOnGc;
     private int activeLedgerCounter;
-    private Counter deletedLedgerCounter;
 
     public ScanAndCompareGarbageCollector(LedgerManager ledgerManager, CompactableLedgerStorage ledgerStorage,
             ServerConfiguration conf, StatsLogger statsLogger) throws IOException {
@@ -99,7 +90,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
         this.conf = conf;
         this.selfBookieAddress = Bookie.getBookieAddress(conf);
         this.gcOverReplicatedLedgerIntervalMillis = conf.getGcOverreplicatedLedgerWaitTimeMillis();
-        this.lastOverReplicatedLedgerGcTimeMillis = MathUtils.now();
+        this.lastOverReplicatedLedgerGcTimeMillis = System.currentTimeMillis();
         if (gcOverReplicatedLedgerIntervalMillis > 0) {
             this.enableGcOverReplicatedLedger = true;
         }
@@ -110,20 +101,11 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
 
         verifyMetadataOnGc = conf.getVerifyMetadataOnGC();
 
-        this.deletedLedgerCounter = statsLogger.getCounter(DELETED_LEDGER_COUNT);
-
         this.activeLedgerCounter = 0;
-        statsLogger.registerGauge(ACTIVE_LEDGER_COUNT, new Gauge<Integer>() {
-            @Override
-            public Integer getDefaultValue() {
-                return 0;
-            }
+    }
 
-            @Override
-            public Integer getSample() {
-                return activeLedgerCounter;
-            }
-        });
+    public int getNumActiveLedgers() {
+        return activeLedgerCounter;
     }
 
     @Override
@@ -140,7 +122,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                     Long.MAX_VALUE));
             this.activeLedgerCounter = bkActiveLedgers.size();
 
-            long curTime = MathUtils.now();
+            long curTime = System.currentTimeMillis();
             boolean checkOverreplicatedLedgers = (enableGcOverReplicatedLedger && curTime
                     - lastOverReplicatedLedgerGcTimeMillis > gcOverReplicatedLedgerIntervalMillis);
             if (checkOverreplicatedLedgers) {
@@ -153,7 +135,7 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                 } else {
                     LOG.info("Removed over-replicated ledgers: {}", overReplicatedLedgers);
                 }
-                lastOverReplicatedLedgerGcTimeMillis = MathUtils.now();
+                lastOverReplicatedLedgerGcTimeMillis = System.currentTimeMillis();
             }
 
             // Iterate over all the ledger on the metadata store
@@ -182,22 +164,18 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                 for (Long bkLid : subBkActiveLedgers) {
                     if (!ledgersInMetadata.contains(bkLid)) {
                         if (verifyMetadataOnGc) {
-                            CountDownLatch latch = new CountDownLatch(1);
-                            final AtomicInteger metaRC = new AtomicInteger(0);
-                            ledgerManager.readLedgerMetadata(bkLid, (rc, ignore) -> {
-                                metaRC.set(rc);
-                                latch.countDown();
-                            });
-                            latch.await();
-                            if (metaRC.get() != BKException.Code.NoSuchLedgerExistsException) {
-                                LOG.warn(
-                                        "Ledger {} Missing in metadata list, but ledgerManager returned rc: {}.",
-                                        bkLid,
-                                        metaRC.get());
+                            int rc = BKException.Code.OK;
+                            try {
+                                result(ledgerManager.readLedgerMetadata(bkLid));
+                            } catch (BKException e) {
+                                rc = e.getCode();
+                            }
+                            if (rc != BKException.Code.NoSuchLedgerExistsException) {
+                                LOG.warn("Ledger {} Missing in metadata list, but ledgerManager returned rc: {}.",
+                                         bkLid, rc);
                                 continue;
                             }
                         }
-                        deletedLedgerCounter.inc();
                         garbageCleaner.clean(bkLid);
                     }
                 }
@@ -237,44 +215,40 @@ public class ScanAndCompareGarbageCollector implements GarbageCollector{
                 ZkLedgerUnderreplicationManager.acquireUnderreplicatedLedgerLock(zk, zkLedgersRootPath, ledgerId,
                         zkAcls);
                 semaphore.acquire();
-                ledgerManager.readLedgerMetadata(ledgerId, new GenericCallback<Versioned<LedgerMetadata>>() {
-
-                    @Override
-                    public void operationComplete(int rc, Versioned<LedgerMetadata> ledgerMetadata) {
-                        if (rc == BKException.Code.OK) {
-                            // do not delete a ledger that is not closed, since the ensemble might change again and
-                            // include the current bookie while we are deleting it
-                            if (!ledgerMetadata.getValue().isClosed()) {
-                                release();
-                                return;
-                            }
-                            SortedMap<Long, ? extends List<BookieSocketAddress>> ensembles =
-                                ledgerMetadata.getValue().getAllEnsembles();
-                            for (List<BookieSocketAddress> ensemble : ensembles.values()) {
-                                // check if this bookie is supposed to have this ledger
-                                if (ensemble.contains(selfBookieAddress)) {
-                                    release();
-                                    return;
+                ledgerManager.readLedgerMetadata(ledgerId)
+                    .whenComplete((metadata, exception) -> {
+                            try {
+                                if (exception == null) {
+                                    // do not delete a ledger that is not closed, since the ensemble might
+                                    // change again and include the current bookie while we are deleting it
+                                    if (!metadata.getValue().isClosed()) {
+                                        return;
+                                    }
+                                    SortedMap<Long, ? extends List<BookieSocketAddress>> ensembles =
+                                        metadata.getValue().getAllEnsembles();
+                                    for (List<BookieSocketAddress> ensemble : ensembles.values()) {
+                                        // check if this bookie is supposed to have this ledger
+                                        if (ensemble.contains(selfBookieAddress)) {
+                                            return;
+                                        }
+                                    }
+                                    // this bookie is not supposed to have this ledger,
+                                    // thus we can delete this ledger now
+                                    overReplicatedLedgers.add(ledgerId);
+                                    garbageCleaner.clean(ledgerId);
+                                }
+                            } finally {
+                                semaphore.release();
+                                latch.countDown();
+                                try {
+                                    ZkLedgerUnderreplicationManager.releaseUnderreplicatedLedgerLock(
+                                            zk, zkLedgersRootPath, ledgerId);
+                                } catch (Throwable t) {
+                                    LOG.error("Exception when removing underreplicated lock for ledger {}",
+                                              ledgerId, t);
                                 }
                             }
-                            // this bookie is not supposed to have this ledger, thus we can delete this ledger now
-                            overReplicatedLedgers.add(ledgerId);
-                            garbageCleaner.clean(ledgerId);
-                        }
-                        release();
-                    }
-
-                    private void release() {
-                        semaphore.release();
-                        latch.countDown();
-                        try {
-                            ZkLedgerUnderreplicationManager.releaseUnderreplicatedLedgerLock(zk, zkLedgersRootPath,
-                                    ledgerId);
-                        } catch (Throwable t) {
-                            LOG.error("Exception when removing underreplicated lock for ledger {}", ledgerId, t);
-                        }
-                    }
-                });
+                        });
             } catch (Throwable t) {
                 LOG.error("Exception when iterating through the ledgers to check for over-replication", t);
                 latch.countDown();

@@ -122,6 +122,8 @@ public abstract class BKException extends org.apache.bookkeeper.client.api.BKExc
             return new BKLedgerIdOverflowException();
         case Code.SecurityException:
             return new BKSecurityException();
+        case Code.MetadataSerializationException:
+            return new BKMetadataSerializationException();
         default:
             return new BKUnexpectedConditionException();
         }
@@ -436,15 +438,42 @@ public abstract class BKException extends org.apache.bookkeeper.client.api.BKExc
     }
 
     /**
+     * Bookkeeper metadata serialization exception.
+     */
+    public static class BKMetadataSerializationException extends BKException {
+        public BKMetadataSerializationException() {
+            super(Code.MetadataSerializationException);
+        }
+
+        public BKMetadataSerializationException(Throwable cause) {
+            super(Code.MetadataSerializationException, cause);
+        }
+    }
+
+    /**
      * Extract an exception code from an BKException, or use a default if it's another type.
+     * The throwable is null, assume that no exception took place and return
+     * {@link BKException.Code.OK}.
      */
     public static int getExceptionCode(Throwable t, int defaultCode) {
-        if (t instanceof BKException) {
+        if (t == null) {
+            return BKException.Code.OK;
+        } else if (t instanceof BKException) {
             return ((BKException) t).getCode();
         } else if (t.getCause() != null) {
             return getExceptionCode(t.getCause(), defaultCode);
         } else {
             return defaultCode;
         }
+    }
+
+    /**
+     * Extract an exception code from an BKException, or default to unexpected exception if throwable
+     * is not a BKException.
+     *
+     * @see #getExceptionCode(Throwable,int)
+     */
+    public static int getExceptionCode(Throwable t) {
+        return getExceptionCode(t, Code.UnexpectedConditionException);
     }
 }

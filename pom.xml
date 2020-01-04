@@ -23,7 +23,7 @@
   </parent>
   <modelVersion>4.0.0</modelVersion>
   <groupId>org.apache.bookkeeper</groupId>
-  <version>4.9.0-SNAPSHOT</version>
+  <version>4.9.2</version>
   <artifactId>bookkeeper</artifactId>
   <packaging>pom</packaging>
   <name>Apache BookKeeper :: Parent</name>
@@ -40,7 +40,7 @@
     <connection>scm:git:https://github.com/apache/bookkeeper.git</connection>
     <developerConnection>scm:git:https://github.com/apache/bookkeeper.git</developerConnection>
     <url>https://github.com/apache/bookkeeper</url>
-    <tag>HEAD</tag>
+    <tag>v4.9.2-rc0</tag>
   </scm>
   <issueManagement>
     <system>JIRA</system>
@@ -163,8 +163,8 @@
     <rocksdb.version>5.13.1</rocksdb.version>
     <shrinkwrap.version>3.0.1</shrinkwrap.version>
     <slf4j.version>1.7.25</slf4j.version>
-    <snakeyaml.version>1.23</snakeyaml.version>
-    <spotbugs-annotations.version>3.1.1</spotbugs-annotations.version>
+    <snakeyaml.version>1.19</snakeyaml.version>
+    <spotbugs-annotations.version>3.1.8</spotbugs-annotations.version>
     <javax-annotations-api.version>1.3.2</javax-annotations-api.version>
     <testcontainers.version>1.8.3</testcontainers.version>
     <twitter-server.version>1.29.0</twitter-server.version>
@@ -196,7 +196,7 @@
     <os-maven-plugin.version>1.4.1.Final</os-maven-plugin.version>
     <protobuf-maven-plugin.version>0.5.0</protobuf-maven-plugin.version>
     <puppycrawl.checkstyle.version>6.19</puppycrawl.checkstyle.version>
-    <spotbugs-maven-plugin.version>3.1.0-RC6</spotbugs-maven-plugin.version>
+    <spotbugs-maven-plugin.version>3.1.8</spotbugs-maven-plugin.version>
   </properties>
 
   <!-- dependency definitions -->
@@ -996,6 +996,9 @@
             <exclude>**/__pycache__/**</exclude>
             <exclude>**/bookkeeper.egg-info/**</exclude>
             <exclude>**/pip-selfcheck.json</exclude>
+
+            <!-- test resources -->
+            <exclude>**/test_conf_2.conf</exclude>
           </excludes>
           <consoleOutput>true</consoleOutput>
         </configuration>
@@ -1096,6 +1099,44 @@
         <!-- enable building table service -->
         <module>stream</module>
       </modules>
+    </profile>
+
+    <profile>
+      <id>jdk11-no-spotbugs</id>
+      <activation>
+        <jdk>[11,)</jdk>
+      </activation>
+      <build>
+        <plugins>
+           <plugin>
+             <groupId>com.github.spotbugs</groupId>
+             <artifactId>spotbugs-maven-plugin</artifactId>
+             <configuration>
+                 <skip>true</skip>
+             </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>apache-release</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>source-release-assembly</id>
+                <configuration>
+                  <!-- we have a dedicated distribution module in bookkeeper-dist -->
+                  <skipAssembly>true</skipAssembly>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
   </profiles>
 </project>

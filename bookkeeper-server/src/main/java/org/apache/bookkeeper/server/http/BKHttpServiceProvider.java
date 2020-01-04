@@ -19,10 +19,13 @@
 package org.apache.bookkeeper.server.http;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+
 import lombok.extern.slf4j.Slf4j;
+
 import org.apache.bookkeeper.bookie.Bookie;
 import org.apache.bookkeeper.client.BKException;
 import org.apache.bookkeeper.client.BookKeeperAdmin;
@@ -37,10 +40,13 @@ import org.apache.bookkeeper.meta.zk.ZKMetadataDriverBase;
 import org.apache.bookkeeper.proto.BookieServer;
 import org.apache.bookkeeper.replication.Auditor;
 import org.apache.bookkeeper.replication.AutoRecoveryMain;
+import org.apache.bookkeeper.server.http.service.BookieIsReadyService;
+import org.apache.bookkeeper.server.http.service.BookieStateService;
 import org.apache.bookkeeper.server.http.service.ConfigurationService;
 import org.apache.bookkeeper.server.http.service.DecommissionService;
 import org.apache.bookkeeper.server.http.service.DeleteLedgerService;
 import org.apache.bookkeeper.server.http.service.ExpandStorageService;
+import org.apache.bookkeeper.server.http.service.GCDetailsService;
 import org.apache.bookkeeper.server.http.service.GetLastLogMarkService;
 import org.apache.bookkeeper.server.http.service.GetLedgerMetaService;
 import org.apache.bookkeeper.server.http.service.ListBookieInfoService;
@@ -53,6 +59,7 @@ import org.apache.bookkeeper.server.http.service.MetricsService;
 import org.apache.bookkeeper.server.http.service.ReadLedgerEntryService;
 import org.apache.bookkeeper.server.http.service.RecoveryBookieService;
 import org.apache.bookkeeper.server.http.service.TriggerAuditService;
+import org.apache.bookkeeper.server.http.service.TriggerGCService;
 import org.apache.bookkeeper.server.http.service.WhoIsAuditorService;
 import org.apache.bookkeeper.stats.StatsProvider;
 import org.apache.bookkeeper.zookeeper.ZooKeeperClient;
@@ -208,6 +215,14 @@ public class BKHttpServiceProvider implements HttpServiceProvider {
                 return new ListDiskFilesService(configuration);
             case EXPAND_STORAGE:
                 return new ExpandStorageService(configuration);
+            case GC:
+                return new TriggerGCService(configuration, bookieServer);
+            case GC_DETAILS:
+                return new GCDetailsService(configuration, bookieServer);
+            case BOOKIE_STATE:
+                return new BookieStateService(bookieServer.getBookie());
+            case BOOKIE_IS_READY:
+                return new BookieIsReadyService(bookieServer.getBookie());
 
             // autorecovery
             case RECOVERY_BOOKIE:

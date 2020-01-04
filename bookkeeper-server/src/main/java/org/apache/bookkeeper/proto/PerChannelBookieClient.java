@@ -29,7 +29,6 @@ import com.google.protobuf.UnsafeByteOperations;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.channel.Channel;
@@ -125,6 +124,7 @@ import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
+import org.apache.bookkeeper.stats.annotations.StatsDoc;
 import org.apache.bookkeeper.tls.SecurityException;
 import org.apache.bookkeeper.tls.SecurityHandlerFactory;
 import org.apache.bookkeeper.tls.SecurityHandlerFactory.NodeType;
@@ -142,6 +142,10 @@ import org.slf4j.MDC;
  * This class manages all details of connection to a particular bookie. It also
  * has reconnect logic if a connection to a bookie fails.
  */
+@StatsDoc(
+    name = BookKeeperClientStats.CHANNEL_SCOPE,
+    help = "Per channel bookie client stats"
+)
 @Sharable
 public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
 
@@ -161,6 +165,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
 
     final BookieSocketAddress addr;
     final EventLoopGroup eventLoopGroup;
+    final ByteBufAllocator allocator;
     final OrderedExecutor executor;
     final long addEntryTimeoutNanos;
     final long readEntryTimeoutNanos;
@@ -177,29 +182,121 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         new SynchronizedHashMultiMap<>();
 
     private final StatsLogger statsLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_READ_OP,
+        help = "channel stats of read entries requests"
+    )
     private final OpStatsLogger readEntryOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_TIMEOUT_READ,
+        help = "timeout stats of read entries requests"
+    )
     private final OpStatsLogger readTimeoutOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_ADD_OP,
+        help = "channel stats of add entries requests"
+    )
     private final OpStatsLogger addEntryOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_WRITE_LAC_OP,
+        help = "channel stats of write_lac requests"
+    )
     private final OpStatsLogger writeLacOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_FORCE_OP,
+        help = "channel stats of force requests"
+    )
     private final OpStatsLogger forceLedgerOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_READ_LAC_OP,
+        help = "channel stats of read_lac requests"
+    )
     private final OpStatsLogger readLacOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_TIMEOUT_ADD,
+        help = "timeout stats of add entries requests"
+    )
     private final OpStatsLogger addTimeoutOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_TIMEOUT_WRITE_LAC,
+        help = "timeout stats of write_lac requests"
+    )
     private final OpStatsLogger writeLacTimeoutOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_TIMEOUT_FORCE,
+        help = "timeout stats of force requests"
+    )
     private final OpStatsLogger forceLedgerTimeoutOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_TIMEOUT_READ_LAC,
+        help = "timeout stats of read_lac requests"
+    )
     private final OpStatsLogger readLacTimeoutOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.GET_BOOKIE_INFO_OP,
+        help = "channel stats of get_bookie_info requests"
+    )
     private final OpStatsLogger getBookieInfoOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.TIMEOUT_GET_BOOKIE_INFO,
+        help = "timeout stats of get_bookie_info requests"
+    )
     private final OpStatsLogger getBookieInfoTimeoutOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_START_TLS_OP,
+        help = "channel stats of start_tls requests"
+    )
     private final OpStatsLogger startTLSOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CHANNEL_TIMEOUT_START_TLS_OP,
+        help = "timeout stats of start_tls requests"
+    )
     private final OpStatsLogger startTLSTimeoutOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.CLIENT_CONNECT_TIMER,
+        help = "channel stats of connect requests"
+    )
     private final OpStatsLogger connectTimer;
+    @StatsDoc(
+        name = BookKeeperClientStats.NETTY_EXCEPTION_CNT,
+        help = "the number of exceptions received from this channel"
+    )
     private final Counter exceptionCounter;
+    @StatsDoc(
+        name = BookKeeperClientStats.ADD_OP_OUTSTANDING,
+        help = "the number of outstanding add_entry requests"
+    )
     private final Counter addEntryOutstanding;
+    @StatsDoc(
+        name = BookKeeperClientStats.READ_OP_OUTSTANDING,
+        help = "the number of outstanding add_entry requests"
+    )
     private final Counter readEntryOutstanding;
     /* collect stats on all Ops that flows through netty pipeline */
+    @StatsDoc(
+        name = BookKeeperClientStats.NETTY_OPS,
+        help = "channel stats for all operations flowing through netty pipeline"
+    )
     private final OpStatsLogger nettyOpLogger;
+    @StatsDoc(
+        name = BookKeeperClientStats.ACTIVE_NON_TLS_CHANNEL_COUNTER,
+        help = "the number of active non-tls channels"
+    )
     private final Counter activeNonTlsChannelCounter;
+    @StatsDoc(
+        name = BookKeeperClientStats.ACTIVE_TLS_CHANNEL_COUNTER,
+        help = "the number of active tls channels"
+    )
     private final Counter activeTlsChannelCounter;
+    @StatsDoc(
+        name = BookKeeperClientStats.FAILED_CONNECTION_COUNTER,
+        help = "the number of failed connections"
+    )
     private final Counter failedConnectionCounter;
+    @StatsDoc(
+        name = BookKeeperClientStats.FAILED_TLS_HANDSHAKE_COUNTER,
+        help = "the number of failed tls handshakes"
+    )
     private final Counter failedTlsHandshakeCounter;
 
     private final boolean useV2WireProtocol;
@@ -248,12 +345,14 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
                                   StatsLogger parentStatsLogger, ClientAuthProvider.Factory authProviderFactory,
                                   ExtensionRegistry extRegistry,
                                   PerChannelBookieClientPool pcbcPool) throws SecurityException {
-       this(conf, executor, eventLoopGroup, addr, NullStatsLogger.INSTANCE,
+        this(conf, executor, eventLoopGroup, UnpooledByteBufAllocator.DEFAULT, addr, NullStatsLogger.INSTANCE,
                 authProviderFactory, extRegistry, pcbcPool, null);
     }
 
     public PerChannelBookieClient(ClientConfiguration conf, OrderedExecutor executor,
-                                  EventLoopGroup eventLoopGroup, BookieSocketAddress addr,
+                                  EventLoopGroup eventLoopGroup,
+                                  ByteBufAllocator allocator,
+                                  BookieSocketAddress addr,
                                   StatsLogger parentStatsLogger, ClientAuthProvider.Factory authProviderFactory,
                                   ExtensionRegistry extRegistry,
                                   PerChannelBookieClientPool pcbcPool,
@@ -267,6 +366,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         } else {
             this.eventLoopGroup = eventLoopGroup;
         }
+        this.allocator = allocator;
         this.state = ConnectionState.DISCONNECTED;
         this.addEntryTimeoutNanos = TimeUnit.SECONDS.toNanos(conf.getAddEntryTimeout());
         this.readEntryTimeoutNanos = TimeUnit.SECONDS.toNanos(conf.getReadEntryTimeout());
@@ -279,7 +379,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
         this.extRegistry = extRegistry;
         this.shFactory = shFactory;
         if (shFactory != null) {
-            shFactory.init(NodeType.Client, conf);
+            shFactory.init(NodeType.Client, conf, allocator);
         }
 
         StringBuilder nameBuilder = new StringBuilder();
@@ -418,14 +518,7 @@ public class PerChannelBookieClient extends ChannelInboundHandlerAdapter {
             bootstrap.channel(NioSocketChannel.class);
         }
 
-        ByteBufAllocator allocator;
-        if (this.conf.isNettyUsePooledBuffers()) {
-            allocator = PooledByteBufAllocator.DEFAULT;
-        } else {
-            allocator = UnpooledByteBufAllocator.DEFAULT;
-        }
-
-        bootstrap.option(ChannelOption.ALLOCATOR, allocator);
+        bootstrap.option(ChannelOption.ALLOCATOR, this.allocator);
         bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, conf.getClientConnectTimeoutMillis());
         bootstrap.option(ChannelOption.WRITE_BUFFER_WATER_MARK, new WriteBufferWaterMark(
                 conf.getClientWriteBufferLowWaterMark(), conf.getClientWriteBufferHighWaterMark()));

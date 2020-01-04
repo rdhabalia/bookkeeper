@@ -30,7 +30,7 @@ import org.apache.bookkeeper.client.BKException
 import org.apache.bookkeeper.client.BookKeeper
 import org.apache.bookkeeper.client.BookKeeperAdmin
 import org.apache.bookkeeper.client.LedgerHandle
-import org.apache.bookkeeper.client.LedgerMetadata
+import org.apache.bookkeeper.client.api.LedgerMetadata
 import org.apache.bookkeeper.conf.ClientConfiguration
 import org.apache.bookkeeper.net.BookieSocketAddress
 import org.apache.bookkeeper.proto.BookieProtocol
@@ -59,16 +59,7 @@ class TestCompatRecoveryNoPassword {
     DockerClient docker
 
     private LedgerMetadata getLedgerMetadata(BookKeeper bookkeeper, long ledgerId) throws Exception {
-        CompletableFuture<Versioned<LedgerMetadata>> future = new CompletableFuture<>()
-        bookkeeper.getLedgerManager().readLedgerMetadata(
-            ledgerId, { rc, result ->
-                if (rc != BKException.Code.OK) {
-                    future.completeExceptionally(BKException.create(rc))
-                } else {
-                    future.complete(result)
-                }
-            })
-        return future.get().getValue()
+        return bookkeeper.getLedgerManager().readLedgerMetadata(ledgerId).get().getValue()
     }
 
     private static class ReplicationVerificationCallback implements ReadEntryCallback {

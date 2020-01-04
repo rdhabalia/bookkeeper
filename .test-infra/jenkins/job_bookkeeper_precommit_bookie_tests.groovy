@@ -35,12 +35,12 @@ freeStyleJob('bookkeeper_precommit_bookie_tests') {
     'JDK 1.8 (latest)',
     200,
     'ubuntu',
-    '${ghprbActualCommit}')
+    '${sha1}')
 
   // Sets that this is a PreCommit job.
   common_job_properties.setPreCommit(
     delegate,
-    'Bookie Tests',
+    'Bookie Tests (trigger via `run bookkeeper-server bookie tests`)',
     '.*(re)?run bookkeeper-server (bookie )?tests.*',
     '.*\\[x\\] \\[skip bookkeeper-server (bookie )?tests\\].*',
     true)

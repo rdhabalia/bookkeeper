@@ -23,12 +23,14 @@ import static com.google.common.base.Charsets.UTF_8;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
+import com.google.common.collect.Lists;
+import java.util.Base64;
 import java.util.Collections;
-import java.util.NoSuchElementException;
+import java.util.List;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
-import org.apache.bookkeeper.proto.DataFormats.LedgerMetadataFormat;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
+import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.junit.Test;
 
 /**
@@ -36,19 +38,19 @@ import org.junit.Test;
  */
 public class LedgerMetadataTest {
 
-    private static final String passwdStr = "testPasswd";
-    private static final byte[] passwd = passwdStr.getBytes(UTF_8);
+    private static final byte[] passwd = "testPasswd".getBytes(UTF_8);
 
     @Test
     public void testGetters() {
-        org.apache.bookkeeper.client.api.LedgerMetadata metadata = new LedgerMetadata(
-            3,
-            2,
-            1,
-            DigestType.CRC32,
-            passwd,
-            Collections.emptyMap(),
-            false);
+        List<BookieSocketAddress> ensemble = Lists.newArrayList(
+                new BookieSocketAddress("192.0.2.1", 1234),
+                new BookieSocketAddress("192.0.2.2", 1234),
+                new BookieSocketAddress("192.0.2.3", 1234));
+        org.apache.bookkeeper.client.api.LedgerMetadata metadata = LedgerMetadataBuilder.create()
+            .withEnsembleSize(3).withWriteQuorumSize(2).withAckQuorumSize(1)
+            .withDigestType(DigestType.CRC32.toApiDigestType()).withPassword(passwd)
+            .newEnsembleEntry(0L, ensemble)
+            .build();
 
         assertEquals(3, metadata.getEnsembleSize());
         assertEquals(2, metadata.getWriteQuorumSize());
@@ -59,60 +61,26 @@ public class LedgerMetadataTest {
         assertEquals(-1L, metadata.getLastEntryId());
         assertEquals(0, metadata.getLength());
         assertFalse(metadata.isClosed());
-        assertTrue(metadata.getAllEnsembles().isEmpty());
-
-        try {
-            metadata.getEnsembleAt(99L);
-            fail("Should fail to retrieve ensemble if ensembles is empty");
-        } catch (NoSuchElementException e) {
-            // expected
-        }
-    }
-
-    @Test
-    public void testStoreSystemtimeAsLedgerCtimeEnabled()
-            throws Exception {
-        LedgerMetadata lm = new LedgerMetadata(
-            3,
-            3,
-            2,
-            DigestType.CRC32,
-            passwd,
-            Collections.emptyMap(),
-            true);
-        LedgerMetadataFormat format = lm.buildProtoFormat();
-        assertTrue(format.hasCtime());
-    }
-
-    @Test
-    public void testStoreSystemtimeAsLedgerCtimeDisabled()
-            throws Exception {
-        LedgerMetadata lm = new LedgerMetadata(
-            3,
-            3,
-            2,
-            DigestType.CRC32,
-            passwd,
-            Collections.emptyMap(),
-            false);
-        LedgerMetadataFormat format = lm.buildProtoFormat();
-        assertFalse(format.hasCtime());
+        assertEquals(1, metadata.getAllEnsembles().size());
+        assertEquals(ensemble, metadata.getAllEnsembles().get(0L));
+        assertEquals(ensemble, metadata.getEnsembleAt(99L));
     }
 
     @Test
     public void testToString() {
-        LedgerMetadata lm1 = new LedgerMetadata(
-            3,
-            3,
-            2,
-            DigestType.CRC32,
-            passwd,
-            Collections.emptyMap(),
-            true);
+        List<BookieSocketAddress> ensemble = Lists.newArrayList(
+                new BookieSocketAddress("192.0.2.1", 1234),
+                new BookieSocketAddress("192.0.2.2", 1234),
+                new BookieSocketAddress("192.0.2.3", 1234));
 
-        assertTrue("toString should contain 'password' field", lm1.toString().contains("password"));
-        assertTrue("toString should contain password value", lm1.toString().contains(passwdStr));
-        assertFalse("toSafeString should not contain 'password' field", lm1.toSafeString().contains("password"));
-        assertFalse("toSafeString should not contain password value", lm1.toSafeString().contains(passwdStr));
+        LedgerMetadata lm1 = LedgerMetadataBuilder.create()
+            .withDigestType(DigestType.CRC32.toApiDigestType())
+            .withPassword(passwd)
+            .newEnsembleEntry(0L, ensemble)
+            .build();
+
+        assertTrue("toString should contain password value",
+                   lm1.toString().contains(Base64.getEncoder().encodeToString(passwd)));
+        assertTrue("toSafeString should not contain password value", lm1.toSafeString().contains("OMITTED"));
     }
 }

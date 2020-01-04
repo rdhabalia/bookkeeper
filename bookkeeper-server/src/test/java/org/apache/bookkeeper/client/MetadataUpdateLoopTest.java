@@ -42,11 +42,11 @@ import java.util.stream.IntStream;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
+import org.apache.bookkeeper.client.api.DigestType;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.meta.MockLedgerManager;
 import org.apache.bookkeeper.net.BookieSocketAddress;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallbackFuture;
 import org.apache.bookkeeper.versioning.Version;
 import org.apache.bookkeeper.versioning.Versioned;
 import org.apache.commons.lang3.tuple.Triple;
@@ -70,16 +70,15 @@ public class MetadataUpdateLoopTest {
     public void testBasicUpdate() throws Exception {
         try (LedgerManager lm = new MockLedgerManager()) {
             LedgerMetadata initMeta = LedgerMetadataBuilder.create().withEnsembleSize(5)
+                .withDigestType(DigestType.CRC32C).withPassword(new byte[0])
                 .newEnsembleEntry(0L, Lists.newArrayList(
                                           new BookieSocketAddress("0.0.0.0:3181"),
                                           new BookieSocketAddress("0.0.0.1:3181"),
                                           new BookieSocketAddress("0.0.0.2:3181"),
                                           new BookieSocketAddress("0.0.0.3:3181"),
                                           new BookieSocketAddress("0.0.0.4:3181"))).build();
-            GenericCallbackFuture<Versioned<LedgerMetadata>> promise = new GenericCallbackFuture<>();
             long ledgerId = 1234L;
-            lm.createLedgerMetadata(ledgerId, initMeta, promise);
-            Versioned<LedgerMetadata> writtenMetadata = promise.get();
+            Versioned<LedgerMetadata> writtenMetadata = lm.createLedgerMetadata(ledgerId, initMeta).get();
 
             AtomicReference<Versioned<LedgerMetadata>> reference = new AtomicReference<>(writtenMetadata);
 
@@ -90,7 +89,7 @@ public class MetadataUpdateLoopTest {
                     reference::get,
                     (currentMetadata) -> true,
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(0, newAddress);
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -98,7 +97,7 @@ public class MetadataUpdateLoopTest {
             loop.run().get();
 
             Assert.assertNotEquals(reference.get(), writtenMetadata);
-            Assert.assertEquals(reference.get().getValue().getEnsemble(0L).get(0), newAddress);
+            Assert.assertEquals(reference.get().getValue().getEnsembleAt(0L).get(0), newAddress);
         }
     }
 
@@ -118,19 +117,19 @@ public class MetadataUpdateLoopTest {
             BookieSocketAddress b3 = new BookieSocketAddress("0.0.0.3:3181");
 
             LedgerMetadata initMeta = LedgerMetadataBuilder.create().withEnsembleSize(2)
-                .newEnsembleEntry(0L, Lists.newArrayList(b0, b1)).build();
-            GenericCallbackFuture<Versioned<LedgerMetadata>> promise = new GenericCallbackFuture<>();
-            lm.createLedgerMetadata(ledgerId, initMeta, promise);
-            Versioned<LedgerMetadata> writtenMetadata = promise.get();
+                .withDigestType(DigestType.CRC32C).withPassword(new byte[0])
+                .withWriteQuorumSize(2).newEnsembleEntry(0L, Lists.newArrayList(b0, b1)).build();
+            Versioned<LedgerMetadata> writtenMetadata =
+                lm.createLedgerMetadata(ledgerId, initMeta).get();
 
             AtomicReference<Versioned<LedgerMetadata>> reference1 = new AtomicReference<>(writtenMetadata);
             CompletableFuture<Versioned<LedgerMetadata>> loop1 = new MetadataUpdateLoop(
                     lm,
                     ledgerId,
                     reference1::get,
-                    (currentMetadata) -> currentMetadata.getEnsemble(0L).contains(b0),
+                    (currentMetadata) -> currentMetadata.getEnsembleAt(0L).contains(b0),
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(0, b2);
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -141,9 +140,9 @@ public class MetadataUpdateLoopTest {
                     lm,
                     ledgerId,
                     reference2::get,
-                    (currentMetadata) -> currentMetadata.getEnsemble(0L).contains(b1),
+                    (currentMetadata) -> currentMetadata.getEnsembleAt(0L).contains(b1),
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(1, b3);
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -159,13 +158,13 @@ public class MetadataUpdateLoopTest {
 
             Assert.assertEquals(l1meta.getVersion().compare(l2meta.getVersion()), Version.Occurred.BEFORE);
 
-            Assert.assertEquals(l1meta.getValue().getEnsemble(0L).get(0), b2);
-            Assert.assertEquals(l1meta.getValue().getEnsemble(0L).get(1), b1);
+            Assert.assertEquals(l1meta.getValue().getEnsembleAt(0L).get(0), b2);
+            Assert.assertEquals(l1meta.getValue().getEnsembleAt(0L).get(1), b1);
 
-            Assert.assertEquals(l2meta.getValue().getEnsemble(0L).get(0), b2);
-            Assert.assertEquals(l2meta.getValue().getEnsemble(0L).get(1), b3);
+            Assert.assertEquals(l2meta.getValue().getEnsembleAt(0L).get(0), b2);
+            Assert.assertEquals(l2meta.getValue().getEnsembleAt(0L).get(1), b3);
 
-            verify(lm, times(3)).writeLedgerMetadata(anyLong(), any(), any(), any());
+            verify(lm, times(3)).writeLedgerMetadata(anyLong(), any(), any());
         }
     }
 
@@ -185,20 +184,18 @@ public class MetadataUpdateLoopTest {
             BookieSocketAddress b2 = new BookieSocketAddress("0.0.0.2:3181");
 
             LedgerMetadata initMeta = LedgerMetadataBuilder.create().withEnsembleSize(2)
-                .newEnsembleEntry(0L, Lists.newArrayList(b0, b1)).build();
-            GenericCallbackFuture<Versioned<LedgerMetadata>> promise = new GenericCallbackFuture<>();
-            lm.createLedgerMetadata(ledgerId, initMeta, promise);
-            Versioned<LedgerMetadata> writtenMetadata = promise.get();
-
+                .withDigestType(DigestType.CRC32C).withPassword(new byte[0])
+                .withWriteQuorumSize(2).newEnsembleEntry(0L, Lists.newArrayList(b0, b1)).build();
+            Versioned<LedgerMetadata> writtenMetadata = lm.createLedgerMetadata(ledgerId, initMeta).get();
             AtomicReference<Versioned<LedgerMetadata>> reference = new AtomicReference<>(writtenMetadata);
 
             CompletableFuture<Versioned<LedgerMetadata>> loop1 = new MetadataUpdateLoop(
                     lm,
                     ledgerId,
                     reference::get,
-                    (currentMetadata) -> currentMetadata.getEnsemble(0L).contains(b0),
+                    (currentMetadata) -> currentMetadata.getEnsembleAt(0L).contains(b0),
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(0, b2);
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -207,9 +204,9 @@ public class MetadataUpdateLoopTest {
                     lm,
                     ledgerId,
                     reference::get,
-                    (currentMetadata) -> currentMetadata.getEnsemble(0L).contains(b0),
+                    (currentMetadata) -> currentMetadata.getEnsembleAt(0L).contains(b0),
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(0, b2);
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -220,10 +217,10 @@ public class MetadataUpdateLoopTest {
             Assert.assertEquals(loop1.get(), loop2.get());
             Assert.assertEquals(loop1.get(), reference.get());
 
-            Assert.assertEquals(reference.get().getValue().getEnsemble(0L).get(0), b2);
-            Assert.assertEquals(reference.get().getValue().getEnsemble(0L).get(1), b1);
+            Assert.assertEquals(reference.get().getValue().getEnsembleAt(0L).get(0), b2);
+            Assert.assertEquals(reference.get().getValue().getEnsembleAt(0L).get(1), b1);
 
-            verify(lm, times(2)).writeLedgerMetadata(anyLong(), any(), any(), any());
+            verify(lm, times(2)).writeLedgerMetadata(anyLong(), any(), any());
         }
     }
 
@@ -241,20 +238,18 @@ public class MetadataUpdateLoopTest {
             BookieSocketAddress b3 = new BookieSocketAddress("0.0.0.3:3181");
 
             LedgerMetadata initMeta = LedgerMetadataBuilder.create().withEnsembleSize(2)
-                .newEnsembleEntry(0L, Lists.newArrayList(b0, b1)).build();
-            GenericCallbackFuture<Versioned<LedgerMetadata>> promise = new GenericCallbackFuture<>();
-            lm.createLedgerMetadata(ledgerId, initMeta, promise);
-            Versioned<LedgerMetadata> writtenMetadata = promise.get();
-
+                .withDigestType(DigestType.CRC32C).withPassword(new byte[0])
+                .withWriteQuorumSize(2).newEnsembleEntry(0L, Lists.newArrayList(b0, b1)).build();
+            Versioned<LedgerMetadata> writtenMetadata = lm.createLedgerMetadata(ledgerId, initMeta).get();
             AtomicReference<Versioned<LedgerMetadata>> reference = new AtomicReference<>(writtenMetadata);
 
             CompletableFuture<Versioned<LedgerMetadata>> loop1 = new MetadataUpdateLoop(
                     lm,
                     ledgerId,
                     reference::get,
-                    (currentMetadata) -> currentMetadata.getEnsemble(0L).contains(b0),
+                    (currentMetadata) -> currentMetadata.getEnsembleAt(0L).contains(b0),
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(0, b2);
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -265,9 +260,9 @@ public class MetadataUpdateLoopTest {
                     lm,
                     ledgerId,
                     reference::get,
-                    (currentMetadata) -> currentMetadata.getEnsemble(0L).contains(b1),
+                    (currentMetadata) -> currentMetadata.getEnsembleAt(0L).contains(b1),
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(1, b3);
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -278,10 +273,10 @@ public class MetadataUpdateLoopTest {
 
             Assert.assertEquals(loop1.get(), reference.get());
 
-            Assert.assertEquals(reference.get().getValue().getEnsemble(0L).get(0), b2);
-            Assert.assertEquals(reference.get().getValue().getEnsemble(0L).get(1), b3);
+            Assert.assertEquals(reference.get().getValue().getEnsembleAt(0L).get(0), b2);
+            Assert.assertEquals(reference.get().getValue().getEnsembleAt(0L).get(1), b3);
 
-            verify(lm, times(3)).writeLedgerMetadata(anyLong(), any(), any(), any());
+            verify(lm, times(3)).writeLedgerMetadata(anyLong(), any(), any());
         }
     }
 
@@ -309,10 +304,9 @@ public class MetadataUpdateLoopTest {
                 .collect(Collectors.toList());
 
             LedgerMetadata initMeta = LedgerMetadataBuilder.create().withEnsembleSize(ensembleSize)
+                .withDigestType(DigestType.CRC32C).withPassword(new byte[0])
                 .newEnsembleEntry(0L, initialEnsemble).build();
-            GenericCallbackFuture<Versioned<LedgerMetadata>> promise = new GenericCallbackFuture<>();
-            lm.createLedgerMetadata(ledgerId, initMeta, promise);
-            Versioned<LedgerMetadata> writtenMetadata = promise.get();
+            Versioned<LedgerMetadata> writtenMetadata = lm.createLedgerMetadata(ledgerId, initMeta).get();
 
             AtomicReference<Versioned<LedgerMetadata>> reference = new AtomicReference<>(writtenMetadata);
 
@@ -325,9 +319,9 @@ public class MetadataUpdateLoopTest {
                     lm,
                     ledgerId,
                     reference::get,
-                    (currentMetadata) -> currentMetadata.getEnsemble(0L).contains(initialEnsemble.get(i)),
+                    (currentMetadata) -> currentMetadata.getEnsembleAt(0L).contains(initialEnsemble.get(i)),
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(i, replacementBookies.get(i));
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -336,7 +330,7 @@ public class MetadataUpdateLoopTest {
 
             loops.forEach((l) -> l.join());
 
-            Assert.assertEquals(reference.get().getValue().getEnsemble(0L), replacementBookies);
+            Assert.assertEquals(reference.get().getValue().getEnsembleAt(0L), replacementBookies);
         }
     }
 
@@ -354,10 +348,10 @@ public class MetadataUpdateLoopTest {
             BookieSocketAddress b1 = new BookieSocketAddress("0.0.0.1:3181");
 
             LedgerMetadata initMeta = LedgerMetadataBuilder.create().withEnsembleSize(1)
+                .withDigestType(DigestType.CRC32C).withPassword(new byte[0])
+                .withWriteQuorumSize(1).withAckQuorumSize(1)
                 .newEnsembleEntry(0L, Lists.newArrayList(b0)).build();
-            GenericCallbackFuture<Versioned<LedgerMetadata>> promise = new GenericCallbackFuture<>();
-            lm.createLedgerMetadata(ledgerId, initMeta, promise);
-            Versioned<LedgerMetadata> writtenMetadata = promise.get();
+            Versioned<LedgerMetadata> writtenMetadata = lm.createLedgerMetadata(ledgerId, initMeta).get();
 
             AtomicReference<Versioned<LedgerMetadata>> reference = new AtomicReference<>(writtenMetadata);
             CompletableFuture<Versioned<LedgerMetadata>> loop1 = new MetadataUpdateLoop(
@@ -365,7 +359,10 @@ public class MetadataUpdateLoopTest {
                     ledgerId,
                     reference::get,
                     (currentMetadata) -> !currentMetadata.isClosed(),
-                    (currentMetadata) -> LedgerMetadataBuilder.from(currentMetadata).closingAt(10L, 100L).build(),
+                    (currentMetadata) -> {
+                        return LedgerMetadataBuilder.from(currentMetadata)
+                            .withClosedState().withLastEntryId(10L).withLength(100L).build();
+                    },
                     reference::compareAndSet).run();
             CompletableFuture<Versioned<LedgerMetadata>> loop2 = new MetadataUpdateLoop(
                     lm,
@@ -375,11 +372,11 @@ public class MetadataUpdateLoopTest {
                         if (currentMetadata.isClosed()) {
                             throw new BKException.BKLedgerClosedException();
                         } else {
-                            return currentMetadata.getEnsemble(0L).contains(b0);
+                            return currentMetadata.getEnsembleAt(0L).contains(b0);
                         }
                     },
                     (currentMetadata) -> {
-                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsemble(0L));
+                        List<BookieSocketAddress> ensemble = Lists.newArrayList(currentMetadata.getEnsembleAt(0L));
                         ensemble.set(0, b1);
                         return LedgerMetadataBuilder.from(currentMetadata).replaceEnsembleEntry(0L, ensemble).build();
                     },
@@ -394,10 +391,10 @@ public class MetadataUpdateLoopTest {
                 Assert.assertEquals(ee.getCause().getClass(), BKException.BKLedgerClosedException.class);
             }
             Assert.assertEquals(l1meta, reference.get());
-            Assert.assertEquals(l1meta.getValue().getEnsemble(0L).get(0), b0);
+            Assert.assertEquals(l1meta.getValue().getEnsembleAt(0L).get(0), b0);
             Assert.assertTrue(l1meta.getValue().isClosed());
 
-            verify(lm, times(2)).writeLedgerMetadata(anyLong(), any(), any(), any());
+            verify(lm, times(2)).writeLedgerMetadata(anyLong(), any(), any());
         }
     }
 
@@ -420,7 +417,7 @@ public class MetadataUpdateLoopTest {
     static class DeferCallbacksMockLedgerManager extends MockLedgerManager {
         int writeCount = 0;
         final int numToDefer;
-        List<Triple<GenericCallback<Versioned<LedgerMetadata>>, Integer, Versioned<LedgerMetadata>>> deferred =
+        List<Triple<CompletableFuture<Versioned<LedgerMetadata>>, Versioned<LedgerMetadata>, Throwable>> deferred =
             Lists.newArrayList();
 
         DeferCallbacksMockLedgerManager(int numToDefer) {
@@ -428,7 +425,14 @@ public class MetadataUpdateLoopTest {
         }
 
         synchronized void runDeferred() {
-            deferred.forEach((d) -> d.getLeft().operationComplete(d.getMiddle(), d.getRight()));
+            deferred.forEach((d) -> {
+                    Throwable t = d.getRight();
+                    if (t != null) {
+                        d.getLeft().completeExceptionally(t);
+                    } else {
+                        d.getLeft().complete(d.getMiddle());
+                    }
+                });
         }
 
         synchronized void waitForWriteCount(int count) throws Exception {
@@ -438,32 +442,38 @@ public class MetadataUpdateLoopTest {
         }
 
         @Override
-        public synchronized void writeLedgerMetadata(long ledgerId, LedgerMetadata metadata,
-                                                     Version currentVersion,
-                                                     GenericCallback<Versioned<LedgerMetadata>> cb) {
-            super.writeLedgerMetadata(ledgerId, metadata, currentVersion,
-                                      (rc, written) -> {
-                                          synchronized (DeferCallbacksMockLedgerManager.this) {
-                                              if (writeCount++ < numToDefer) {
-                                                  LOG.info("Added aaaaato deferals");
-                                                  deferred.add(Triple.of(cb, rc, written));
-                                              } else {
-                                                  LOG.info("Completing {}", numToDefer);
-                                                  cb.operationComplete(rc, written);
-                                              }
-                                              DeferCallbacksMockLedgerManager.this.notifyAll();
-                                          }
-                                      });
+        public synchronized CompletableFuture<Versioned<LedgerMetadata>> writeLedgerMetadata(
+                long ledgerId, LedgerMetadata metadata,
+                Version currentVersion) {
+            CompletableFuture<Versioned<LedgerMetadata>> promise = new CompletableFuture<>();
+            super.writeLedgerMetadata(ledgerId, metadata, currentVersion)
+                .whenComplete((written, exception) -> {
+                        synchronized (DeferCallbacksMockLedgerManager.this) {
+                            if (writeCount++ < numToDefer) {
+                                LOG.info("Added to deferals");
+                                deferred.add(Triple.of(promise, written, exception));
+                            } else {
+                                LOG.info("Completing {}", numToDefer);
+                                if (exception != null) {
+                                    promise.completeExceptionally(exception);
+                                } else {
+                                    promise.complete(written);
+                                }
+                            }
+                            DeferCallbacksMockLedgerManager.this.notifyAll();
+                        }
+                    });
+            return promise;
         };
     }
 
     @Data
     @AllArgsConstructor
     static class DeferredUpdate {
+        final CompletableFuture<Versioned<LedgerMetadata>> promise;
         final long ledgerId;
         final LedgerMetadata metadata;
         final Version currentVersion;
-        final GenericCallback<Versioned<LedgerMetadata>> cb;
     }
 
     static class BlockableMockLedgerManager extends MockLedgerManager {
@@ -476,18 +486,28 @@ public class MetadataUpdateLoopTest {
 
         synchronized void releaseWrites() {
             blocking = false;
-            reqs.forEach((r) -> super.writeLedgerMetadata(r.getLedgerId(), r.getMetadata(),
-                                                          r.getCurrentVersion(), r.getCb()));
+            reqs.forEach((r) -> {
+                    super.writeLedgerMetadata(r.getLedgerId(), r.getMetadata(),
+                                              r.getCurrentVersion())
+                        .whenComplete((written, exception) -> {
+                                if (exception != null) {
+                                    r.getPromise().completeExceptionally(exception);
+                                } else {
+                                    r.getPromise().complete(written);
+                                }
+                            });
+                });
         }
 
         @Override
-        public synchronized void writeLedgerMetadata(long ledgerId, LedgerMetadata metadata,
-                                                     Version currentVersion,
-                                                     GenericCallback<Versioned<LedgerMetadata>> cb) {
+        public synchronized CompletableFuture<Versioned<LedgerMetadata>> writeLedgerMetadata(
+                long ledgerId, LedgerMetadata metadata, Version currentVersion) {
             if (blocking) {
-                reqs.add(new DeferredUpdate(ledgerId, metadata, currentVersion, cb));
+                CompletableFuture<Versioned<LedgerMetadata>> promise = new CompletableFuture<>();
+                reqs.add(new DeferredUpdate(promise, ledgerId, metadata, currentVersion));
+                return promise;
             } else {
-                super.writeLedgerMetadata(ledgerId, metadata, currentVersion, cb);
+                return super.writeLedgerMetadata(ledgerId, metadata, currentVersion);
             }
         };
     }

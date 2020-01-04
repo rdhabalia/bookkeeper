@@ -42,6 +42,7 @@ import org.apache.bookkeeper.net.DNSToSwitchMapping;
 import org.apache.bookkeeper.net.NetworkTopology;
 import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.bookkeeper.util.StaticDNSResolver;
+
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -104,8 +105,8 @@ public class TestRackawarePolicyNotificationUpdates extends TestCase {
         int ensembleSize = 3;
         int writeQuorumSize = 2;
         int acqQuorumSize = 2;
-        List<BookieSocketAddress> ensemble = repp.newEnsemble(ensembleSize, writeQuorumSize, acqQuorumSize,
-                Collections.emptyMap(), Collections.emptySet());
+        List<BookieSocketAddress> ensemble = repp.newEnsemble(ensembleSize, writeQuorumSize,
+                acqQuorumSize, Collections.emptyMap(), Collections.emptySet()).getResult();
         int numCovered = TestRackawareEnsemblePlacementPolicy.getNumCoveredWriteQuorums(ensemble, writeQuorumSize,
                 conf.getMinNumRacksPerWriteQuorum());
         assertTrue(numCovered >= 1 && numCovered < 3);
@@ -119,7 +120,7 @@ public class TestRackawarePolicyNotificationUpdates extends TestCase {
         numOfAvailableRacks = numOfAvailableRacks + 1;
         acqQuorumSize = 1;
         ensemble = repp.newEnsemble(ensembleSize, writeQuorumSize, acqQuorumSize, Collections.emptyMap(),
-                Collections.emptySet());
+                                    Collections.emptySet()).getResult();
         assertEquals(3, TestRackawareEnsemblePlacementPolicy.getNumCoveredWriteQuorums(ensemble, writeQuorumSize,
                 conf.getMinNumRacksPerWriteQuorum()));
         assertTrue(ensemble.contains(addr1));

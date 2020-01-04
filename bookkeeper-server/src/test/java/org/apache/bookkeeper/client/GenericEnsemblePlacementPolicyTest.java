@@ -69,8 +69,8 @@ public class GenericEnsemblePlacementPolicyTest extends BookKeeperClusterTestCas
     public static final class CustomEnsemblePlacementPolicy extends DefaultEnsemblePlacementPolicy {
 
         @Override
-        public BookieSocketAddress replaceBookie(int ensembleSize, int writeQuorumSize,
-            int ackQuorumSize, Map<String, byte[]> customMetadata, Set<BookieSocketAddress> currentEnsemble,
+        public PlacementResult<BookieSocketAddress> replaceBookie(int ensembleSize, int writeQuorumSize,
+            int ackQuorumSize, Map<String, byte[]> customMetadata, List<BookieSocketAddress> currentEnsemble,
             BookieSocketAddress bookieToReplace, Set<BookieSocketAddress> excludeBookies)
             throws BKException.BKNotEnoughBookiesException {
             new Exception("replaceBookie " + ensembleSize + "," + customMetadata).printStackTrace();
@@ -81,7 +81,7 @@ public class GenericEnsemblePlacementPolicyTest extends BookKeeperClusterTestCas
         }
 
         @Override
-        public ArrayList<BookieSocketAddress> newEnsemble(int ensembleSize, int quorumSize,
+        public PlacementResult<List<BookieSocketAddress>> newEnsemble(int ensembleSize, int quorumSize,
             int ackQuorumSize, Map<String, byte[]> customMetadata, Set<BookieSocketAddress> excludeBookies)
             throws BKException.BKNotEnoughBookiesException {
             assertNotNull(customMetadata);
@@ -144,7 +144,7 @@ public class GenericEnsemblePlacementPolicyTest extends BookKeeperClusterTestCas
                 try (LedgerHandle lh = bk.createLedger(2, 2, 2, digestType, PASSWORD.getBytes(), customMetadata)) {
                     lh.addEntry(value);
                     long lId = lh.getId();
-                    List<BookieSocketAddress> ensembleAtFirstEntry = lh.getLedgerMetadata().getEnsemble(lId);
+                    List<BookieSocketAddress> ensembleAtFirstEntry = lh.getLedgerMetadata().getEnsembleAt(lId);
                     assertEquals(2, ensembleAtFirstEntry.size());
                     killBookie(ensembleAtFirstEntry.get(0));
                     lh.addEntry(value);

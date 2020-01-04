@@ -19,19 +19,18 @@
  */
 package org.apache.bookkeeper.meta;
 
-import com.google.common.base.Optional;
-
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import org.apache.bookkeeper.client.BKException;
-import org.apache.bookkeeper.client.LedgerMetadata;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.common.concurrent.FutureUtils;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.LedgerMetadataListener;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.Processor;
 
@@ -60,6 +59,7 @@ public class MockLedgerManager implements LedgerManager {
     final Map<Long, Pair<LongVersion, byte[]>> metadataMap;
     final ExecutorService executor;
     final boolean ownsExecutor;
+    final LedgerMetadataSerDe serDe;
     private Hook preWriteHook = (ledgerId, metadata) -> FutureUtils.value(null);
 
     public MockLedgerManager() {
@@ -72,6 +72,7 @@ public class MockLedgerManager implements LedgerManager {
         this.metadataMap = metadataMap;
         this.executor = executor;
         this.ownsExecutor = ownsExecutor;
+        this.serDe = new LedgerMetadataSerDe();
     }
 
     public MockLedgerManager newClient() {
@@ -83,7 +84,7 @@ public class MockLedgerManager implements LedgerManager {
         if (pair == null) {
             return null;
         } else {
-            return new Versioned<>(LedgerMetadata.parseConfig(pair.getRight(), Optional.absent()), pair.getLeft());
+            return new Versioned<>(serDe.parseConfig(pair.getRight(), Optional.empty()), pair.getLeft());
         }
     }
 
@@ -96,48 +97,54 @@ public class MockLedgerManager implements LedgerManager {
     }
 
     @Override
-    public void createLedgerMetadata(long ledgerId, LedgerMetadata metadata,
-                                     GenericCallback<Versioned<LedgerMetadata>> cb) {
+    public CompletableFuture<Versioned<LedgerMetadata>> createLedgerMetadata(long ledgerId, LedgerMetadata metadata) {
+        CompletableFuture<Versioned<LedgerMetadata>> promise = new CompletableFuture<>();
         executor.submit(() -> {
                 if (metadataMap.containsKey(ledgerId)) {
-                    executeCallback(() -> cb.operationComplete(BKException.Code.LedgerExistException, null));
+                    executeCallback(() -> promise.completeExceptionally(new BKException.BKLedgerExistException()));
                 } else {
-                    metadataMap.put(ledgerId, Pair.of(new LongVersion(0L), metadata.serialize()));
                     try {
+                        metadataMap.put(ledgerId, Pair.of(new LongVersion(0L), serDe.serialize(metadata)));
                         Versioned<LedgerMetadata> readBack = readMetadata(ledgerId);
-                        executeCallback(() -> cb.operationComplete(BKException.Code.OK, readBack));
+                        executeCallback(() -> promise.complete(readBack));
                     } catch (Exception e) {
                         LOG.error("Error reading back written metadata", e);
-                        executeCallback(() -> cb.operationComplete(BKException.Code.MetaStoreException, null));
+                        executeCallback(() -> promise.completeExceptionally(new BKException.MetaStoreException()));
                     }
                 }
             });
+        return promise;
     }
 
     @Override
-    public void removeLedgerMetadata(long ledgerId, Version version, GenericCallback<Void> cb) {}
+    public CompletableFuture<Void> removeLedgerMetadata(long ledgerId, Version version) {
+        return CompletableFuture.completedFuture(null);
+    }
 
     @Override
-    public void readLedgerMetadata(long ledgerId, GenericCallback<Versioned<LedgerMetadata>> cb) {
+    public CompletableFuture<Versioned<LedgerMetadata>> readLedgerMetadata(long ledgerId) {
+        CompletableFuture<Versioned<LedgerMetadata>> promise = new CompletableFuture<>();
         executor.submit(() -> {
                 try {
                     Versioned<LedgerMetadata> metadata = readMetadata(ledgerId);
                     if (metadata == null) {
-                        executeCallback(
-                                        () -> cb.operationComplete(BKException.Code.NoSuchLedgerExistsException, null));
+                        executeCallback(() -> promise.completeExceptionally(
+                                                new BKException.BKNoSuchLedgerExistsException()));
                     } else {
-                        executeCallback(() -> cb.operationComplete(BKException.Code.OK, metadata));
+                        executeCallback(() -> promise.complete(metadata));
                     }
                 } catch (Exception e) {
                     LOG.error("Error reading metadata", e);
-                    executeCallback(() -> cb.operationComplete(BKException.Code.MetaStoreException, null));
+                    executeCallback(() -> promise.completeExceptionally(new BKException.MetaStoreException()));
                 }
             });
+        return promise;
     }
 
     @Override
-    public void writeLedgerMetadata(long ledgerId, LedgerMetadata metadata,
-                                    Version currentVersion, GenericCallback<Versioned<LedgerMetadata>> cb) {
+    public CompletableFuture<Versioned<LedgerMetadata>> writeLedgerMetadata(long ledgerId, LedgerMetadata metadata,
+                                                                            Version currentVersion) {
+        CompletableFuture<Versioned<LedgerMetadata>> promise = new CompletableFuture<>();
         preWriteHook.runHook(ledgerId, metadata)
             .thenComposeAsync((ignore) -> {
                     try {
@@ -149,7 +156,7 @@ public class MockLedgerManager implements LedgerManager {
                         } else {
                             LongVersion oldVersion = (LongVersion) oldMetadata.getVersion();
                             metadataMap.put(ledgerId, Pair.of(new LongVersion(oldVersion.getLongVersion() + 1),
-                                                              metadata.serialize()));
+                                                              serDe.serialize(metadata)));
                             Versioned<LedgerMetadata> readBack = readMetadata(ledgerId);
                             return FutureUtils.value(readBack);
                         }
@@ -160,13 +167,13 @@ public class MockLedgerManager implements LedgerManager {
                 }, executor)
             .whenComplete((res, ex) -> {
                     if (ex != null) {
-                        executeCallback(() -> cb.operationComplete(
-                                                BKException.getExceptionCode(ex, BKException.Code.MetaStoreException),
-                                                null));
+                        Throwable cause = (ex instanceof CompletionException) ? ex.getCause() : ex;
+                        executeCallback(() -> promise.completeExceptionally(cause));
                     } else {
-                        executeCallback(() -> cb.operationComplete(BKException.Code.OK, res));
+                        executeCallback(() -> promise.complete(res));
                     }
                 });
+        return promise;
     }
 
     @Override

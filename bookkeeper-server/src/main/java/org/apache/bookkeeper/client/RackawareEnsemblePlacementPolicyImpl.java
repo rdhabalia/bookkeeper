@@ -18,6 +18,11 @@
 package org.apache.bookkeeper.client;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static org.apache.bookkeeper.bookie.BookKeeperServerStats.BOOKIES_JOINED;
+import static org.apache.bookkeeper.bookie.BookKeeperServerStats.BOOKIES_LEFT;
+import static org.apache.bookkeeper.bookie.BookKeeperServerStats.FAILED_TO_RESOLVE_NETWORK_LOCATION_COUNTER;
+import static org.apache.bookkeeper.client.BookKeeperClientStats.CLIENT_SCOPE;
+import static org.apache.bookkeeper.client.BookKeeperClientStats.READ_REQUESTS_REORDERED;
 import static org.apache.bookkeeper.client.RegionAwareEnsemblePlacementPolicy.UNKNOWN_REGION;
 
 import com.google.common.cache.Cache;
@@ -31,6 +36,7 @@ import io.netty.util.HashedWheelTimer;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,10 +50,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
-import org.apache.bookkeeper.bookie.BookKeeperServerStats;
 import org.apache.bookkeeper.client.BKException.BKNotEnoughBookiesException;
 import org.apache.bookkeeper.client.BookieInfoReader.BookieInfo;
 import org.apache.bookkeeper.client.WeightedRandomSelection.WeightedObject;
+import org.apache.bookkeeper.common.util.ReflectionUtils;
 import org.apache.bookkeeper.conf.ClientConfiguration;
 import org.apache.bookkeeper.conf.Configurable;
 import org.apache.bookkeeper.feature.FeatureProvider;
@@ -60,9 +66,10 @@ import org.apache.bookkeeper.net.Node;
 import org.apache.bookkeeper.net.NodeBase;
 import org.apache.bookkeeper.net.ScriptBasedMapping;
 import org.apache.bookkeeper.net.StabilizeNetworkTopology;
+import org.apache.bookkeeper.stats.Counter;
 import org.apache.bookkeeper.stats.OpStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
-import org.apache.bookkeeper.util.ReflectionUtils;
+import org.apache.bookkeeper.stats.annotations.StatsDoc;
 import org.apache.commons.collections4.CollectionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,6 +79,10 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Make most of the class and methods as protected, so it could be extended to implement other algorithms.
  */
+@StatsDoc(
+    name = CLIENT_SCOPE,
+    help = "BookKeeper client stats"
+)
 public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsemblePlacementPolicy {
 
     static final Logger LOG = LoggerFactory.getLogger(RackawareEnsemblePlacementPolicyImpl.class);
@@ -138,12 +149,19 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
 
         final Supplier<String> defaultRackSupplier;
         final DNSToSwitchMapping resolver;
+        @StatsDoc(
+                name = FAILED_TO_RESOLVE_NETWORK_LOCATION_COUNTER,
+                help = "total number of times Resolver failed to resolve rack information of a node"
+        )
+        final Counter failedToResolveNetworkLocationCounter;
 
-        DNSResolverDecorator(DNSToSwitchMapping resolver, Supplier<String> defaultRackSupplier) {
+        DNSResolverDecorator(DNSToSwitchMapping resolver, Supplier<String> defaultRackSupplier,
+                Counter failedToResolveNetworkLocationCounter) {
             checkNotNull(resolver, "Resolver cannot be null");
             checkNotNull(defaultRackSupplier, "defaultRackSupplier should not be null");
             this.defaultRackSupplier = defaultRackSupplier;
             this.resolver = resolver;
+            this.failedToResolveNetworkLocationCounter = failedToResolveNetworkLocationCounter;
         }
 
         public List<String> resolve(List<String> names) {
@@ -159,6 +177,7 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
                     if (rNames.get(i) == null) {
                         LOG.warn("Failed to resolve network location for {}, using default rack for it : {}.",
                                 names.get(i), defaultRack);
+                        failedToResolveNetworkLocationCounter.inc();
                         rNames.set(i, defaultRack);
                     }
                 }
@@ -170,6 +189,7 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
             rNames = new ArrayList<>(names.size());
 
             for (int i = 0; i < names.size(); ++i) {
+                failedToResolveNetworkLocationCounter.inc();
                 rNames.add(defaultRack);
             }
             return rNames;
@@ -204,9 +224,22 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
     // looks like these only assigned in the same thread as constructor, immediately after constructor;
     // no need to make volatile
     protected StatsLogger statsLogger = null;
+    @StatsDoc(
+        name = BOOKIES_JOINED,
+        help = "The distribution of number of bookies joined the cluster on each network topology change"
+    )
     protected OpStatsLogger bookiesJoinedCounter = null;
+    @StatsDoc(
+        name = BOOKIES_LEFT,
+        help = "The distribution of number of bookies left the cluster on each network topology change"
+    )
     protected OpStatsLogger bookiesLeftCounter = null;
+    @StatsDoc(
+        name = READ_REQUESTS_REORDERED,
+        help = "The distribution of number of bookies reordered on each read request"
+    )
     protected OpStatsLogger readReorderedCounter = null;
+    protected Counter failedToResolveNetworkLocationCounter = null;
 
     private String defaultRack = NetworkTopology.DEFAULT_RACK;
 
@@ -244,13 +277,16 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
                                                               StatsLogger statsLogger) {
         checkNotNull(statsLogger, "statsLogger should not be null, use NullStatsLogger instead.");
         this.statsLogger = statsLogger;
-        this.bookiesJoinedCounter = statsLogger.getOpStatsLogger(BookKeeperServerStats.BOOKIES_JOINED);
-        this.bookiesLeftCounter = statsLogger.getOpStatsLogger(BookKeeperServerStats.BOOKIES_LEFT);
-        this.readReorderedCounter = statsLogger.getOpStatsLogger(BookKeeperClientStats.READ_REQUESTS_REORDERED);
+        this.bookiesJoinedCounter = statsLogger.getOpStatsLogger(BOOKIES_JOINED);
+        this.bookiesLeftCounter = statsLogger.getOpStatsLogger(BOOKIES_LEFT);
+        this.readReorderedCounter = statsLogger.getOpStatsLogger(READ_REQUESTS_REORDERED);
+        this.failedToResolveNetworkLocationCounter = statsLogger
+                .getCounter(FAILED_TO_RESOLVE_NETWORK_LOCATION_COUNTER);
         this.reorderReadsRandom = reorderReadsRandom;
         this.stabilizePeriodSeconds = stabilizePeriodSeconds;
         this.reorderThresholdPendingRequests = reorderThresholdPendingRequests;
-        this.dnsResolver = new DNSResolverDecorator(dnsResolver, () -> this.getDefaultRack());
+        this.dnsResolver = new DNSResolverDecorator(dnsResolver, () -> this.getDefaultRack(),
+                failedToResolveNetworkLocationCounter);
         this.timer = timer;
         this.minNumRacksPerWriteQuorum = minNumRacksPerWriteQuorum;
         this.enforceMinNumRacksPerWriteQuorum = enforceMinNumRacksPerWriteQuorum;
@@ -322,9 +358,18 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
                     ((RackChangeNotifier) dnsResolver).registerRackChangeListener(this);
                 }
             } catch (RuntimeException re) {
-                LOG.info("Failed to initialize DNS Resolver {}, used default subnet resolver : {}",
-                    dnsResolverName, re, re.getMessage());
-                dnsResolver = new DefaultResolver(() -> this.getDefaultRack());
+                if (!enforceMinNumRacksPerWriteQuorum) {
+                    LOG.info("Failed to initialize DNS Resolver {}, used default subnet resolver : {}", dnsResolverName,
+                            re, re.getMessage());
+                    dnsResolver = new DefaultResolver(() -> this.getDefaultRack());
+                } else {
+                    /*
+                     * if minNumRacksPerWriteQuorum is enforced, then it
+                     * shouldn't continue in the case of failure to create
+                     * dnsResolver.
+                     */
+                    throw re;
+                }
             }
         }
         slowBookies = CacheBuilder.newBuilder()
@@ -459,7 +504,7 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
         }
     }
 
-    protected Set<Node> convertBookiesToNodes(Set<BookieSocketAddress> excludeBookies) {
+    protected Set<Node> convertBookiesToNodes(Collection<BookieSocketAddress> excludeBookies) {
         Set<Node> nodes = new HashSet<Node>();
         for (BookieSocketAddress addr : excludeBookies) {
             BookieNode bn = knownBookies.get(addr);
@@ -480,17 +525,17 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
     }
 
     @Override
-    public List<BookieSocketAddress> newEnsemble(int ensembleSize, int writeQuorumSize, int ackQuorumSize,
-            Map<String, byte[]> customMetadata, Set<BookieSocketAddress> excludeBookies)
+    public PlacementResult<List<BookieSocketAddress>> newEnsemble(int ensembleSize, int writeQuorumSize,
+            int ackQuorumSize, Map<String, byte[]> customMetadata, Set<BookieSocketAddress> excludeBookies)
             throws BKNotEnoughBookiesException {
         return newEnsembleInternal(ensembleSize, writeQuorumSize, excludeBookies, null, null);
     }
 
-    protected List<BookieSocketAddress> newEnsembleInternal(int ensembleSize,
-                                                            int writeQuorumSize,
-                                                            Set<BookieSocketAddress> excludeBookies,
-                                                            Ensemble<BookieNode> parentEnsemble,
-                                                            Predicate<BookieNode> parentPredicate)
+    protected PlacementResult<List<BookieSocketAddress>> newEnsembleInternal(int ensembleSize,
+                                                                             int writeQuorumSize,
+                                                                             Set<BookieSocketAddress> excludeBookies,
+                                                                             Ensemble<BookieNode> parentEnsemble,
+                                                                             Predicate<BookieNode> parentPredicate)
             throws BKNotEnoughBookiesException {
         return newEnsembleInternal(
                 ensembleSize,
@@ -502,12 +547,12 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
     }
 
     @Override
-    public List<BookieSocketAddress> newEnsemble(int ensembleSize,
-                                                 int writeQuorumSize,
-                                                 int ackQuorumSize,
-                                                 Set<BookieSocketAddress> excludeBookies,
-                                                 Ensemble<BookieNode> parentEnsemble,
-                                                 Predicate<BookieNode> parentPredicate)
+    public PlacementResult<List<BookieSocketAddress>> newEnsemble(int ensembleSize,
+                                                                  int writeQuorumSize,
+                                                                  int ackQuorumSize,
+                                                                  Set<BookieSocketAddress> excludeBookies,
+                                                                  Ensemble<BookieNode> parentEnsemble,
+                                                                  Predicate<BookieNode> parentPredicate)
             throws BKNotEnoughBookiesException {
         return newEnsembleInternal(
                 ensembleSize,
@@ -518,7 +563,7 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
                 parentPredicate);
     }
 
-    protected List<BookieSocketAddress> newEnsembleInternal(
+    protected PlacementResult<List<BookieSocketAddress>> newEnsembleInternal(
             int ensembleSize,
             int writeQuorumSize,
             int ackQuorumSize,
@@ -552,11 +597,9 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
                 for (BookieNode bn : bns) {
                     addrs.add(bn.getAddr());
                 }
-                return addrs;
+                return PlacementResult.of(addrs, false);
             }
-            // pick nodes by racks, to ensure there is at least write quorum number of racks.
-            int idx = 0;
-            String[] racks = new String[ensembleSize];
+
             for (int i = 0; i < ensembleSize; i++) {
                 String curRack;
                 if (null == prevNode) {
@@ -566,64 +609,11 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
                         curRack = localNode.getNetworkLocation();
                     }
                 } else {
-                    StringBuilder sb = new StringBuilder();
-                    sb.append("~");
-
-                    if (writeQuorumSize > 1) {
-                        /*
-                         * RackAwareEnsemblePlacementPolicy should try to select
-                         * bookies from atleast
-                         * minNumRacksPerWriteQuorumForThisEnsemble number of
-                         * different racks for a write quorum. So in a
-                         * WriteQuorum, bookies should be from
-                         * minNumRacksPerWriteQuorumForThisEnsemble number of
-                         * racks. So we would add racks of
-                         * (minNumRacksPerWriteQuorumForThisEnsemble-1)
-                         * neighbours (both sides) to the exclusion list
-                         * (~curRack).
-                         */
-                        for (int j = 1; j < minNumRacksPerWriteQuorumForThisEnsemble; j++) {
-                            int nextIndex = i + j;
-                            if (nextIndex >= ensembleSize) {
-                                nextIndex %= ensembleSize;
-                            }
-                            /*
-                             * if racks[nextIndex] is null, then it means bookie
-                             * is not yet selected for ensemble at 'nextIndex'
-                             * index.
-                             */
-                            if (racks[nextIndex] != null) {
-                                if (!((sb.length() == 1) && (sb.charAt(0) == '~'))) {
-                                    sb.append(NetworkTopologyImpl.NODE_SEPARATOR);
-                                }
-                                sb.append(racks[nextIndex]);
-                            }
-                        }
-
-                        for (int j = 1; j < minNumRacksPerWriteQuorumForThisEnsemble; j++) {
-                            int nextIndex = i - j;
-                            if (nextIndex < 0) {
-                                nextIndex += ensembleSize;
-                            }
-                            /*
-                             * if racks[nextIndex] is null, then it means bookie
-                             * is not yet selected for ensemble at 'nextIndex'
-                             * index.
-                             */
-                            if (racks[nextIndex] != null) {
-                                if (!((sb.length() == 1) && (sb.charAt(0) == '~'))) {
-                                    sb.append(NetworkTopologyImpl.NODE_SEPARATOR);
-                                }
-                                sb.append(racks[nextIndex]);
-                            }
-                        }
-                    }
-                    curRack = sb.toString();
+                    curRack = "~" + prevNode.getNetworkLocation();
                 }
                 boolean firstBookieInTheEnsemble = (null == prevNode);
                 prevNode = selectFromNetworkLocation(curRack, excludeNodes, ensemble, ensemble,
                         !enforceMinNumRacksPerWriteQuorum || firstBookieInTheEnsemble);
-                racks[i] = prevNode.getNetworkLocation();
             }
             List<BookieSocketAddress> bookieList = ensemble.toList();
             if (ensembleSize != bookieList.size()) {
@@ -631,15 +621,17 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
                           ensembleSize, bookieList);
                 throw new BKNotEnoughBookiesException();
             }
-            return bookieList;
+            return PlacementResult.of(bookieList,
+                                      isEnsembleAdheringToPlacementPolicy(
+                                              bookieList, writeQuorumSize, ackQuorumSize));
         } finally {
             rwLock.readLock().unlock();
         }
     }
 
     @Override
-    public BookieSocketAddress replaceBookie(int ensembleSize, int writeQuorumSize, int ackQuorumSize,
-            Map<String, byte[]> customMetadata, Set<BookieSocketAddress> currentEnsemble,
+    public PlacementResult<BookieSocketAddress> replaceBookie(int ensembleSize, int writeQuorumSize, int ackQuorumSize,
+            Map<String, byte[]> customMetadata, List<BookieSocketAddress> currentEnsemble,
             BookieSocketAddress bookieToReplace, Set<BookieSocketAddress> excludeBookies)
             throws BKNotEnoughBookiesException {
         rwLock.readLock().lock();
@@ -674,7 +666,19 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Bookie {} is chosen to replace bookie {}.", candidate, bn);
             }
-            return candidate.getAddr();
+            BookieSocketAddress candidateAddr = candidate.getAddr();
+            List<BookieSocketAddress> newEnsemble = new ArrayList<BookieSocketAddress>(currentEnsemble);
+            if (currentEnsemble.isEmpty()) {
+                /*
+                 * in testing code there are test cases which would pass empty
+                 * currentEnsemble
+                 */
+                newEnsemble.add(candidateAddr);
+            } else {
+                newEnsemble.set(currentEnsemble.indexOf(bookieToReplace), candidateAddr);
+            }
+            return PlacementResult.of(candidateAddr,
+                    isEnsembleAdheringToPlacementPolicy(newEnsemble, writeQuorumSize, ackQuorumSize));
         } finally {
             rwLock.readLock().unlock();
         }
@@ -777,8 +781,7 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
         }
 
         try {
-            return selectRandomInternal(knownNodes, 1, fullExclusionBookiesList, TruePredicate.INSTANCE,
-                    EnsembleForReplacementWithNoConstraints.INSTANCE).get(0);
+            return selectRandomInternal(knownNodes, 1, fullExclusionBookiesList, predicate, ensemble).get(0);
         } catch (BKNotEnoughBookiesException e) {
             if (!fallbackToRandom) {
                 LOG.error(
@@ -1241,5 +1244,33 @@ public class RackawareEnsemblePlacementPolicyImpl extends TopologyAwareEnsembleP
                 writeSet.set(swapWith, writeSet.set(i, writeSet.get(swapWith)));
             }
         }
+    }
+
+    @Override
+    public boolean isEnsembleAdheringToPlacementPolicy(List<BookieSocketAddress> ensembleList, int writeQuorumSize,
+            int ackQuorumSize) {
+        int ensembleSize = ensembleList.size();
+        int minNumRacksPerWriteQuorumForThisEnsemble = Math.min(writeQuorumSize, minNumRacksPerWriteQuorum);
+        HashSet<String> racksOrRegionsInQuorum = new HashSet<String>();
+        BookieSocketAddress bookie;
+        for (int i = 0; i < ensembleList.size(); i++) {
+            racksOrRegionsInQuorum.clear();
+            for (int j = 0; j < writeQuorumSize; j++) {
+                bookie = ensembleList.get((i + j) % ensembleSize);
+                try {
+                    racksOrRegionsInQuorum.add(knownBookies.get(bookie).getNetworkLocation());
+                } catch (Exception e) {
+                    /*
+                     * any issue/exception in analyzing whether ensemble is strictly adhering to
+                     * placement policy should be swallowed.
+                     */
+                    LOG.warn("Received exception while trying to get network location of bookie: {}", bookie, e);
+                }
+            }
+            if (racksOrRegionsInQuorum.size() < minNumRacksPerWriteQuorumForThisEnsemble) {
+                return false;
+            }
+        }
+        return true;
     }
 }

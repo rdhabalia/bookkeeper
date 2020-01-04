@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.bookkeeper.client.BKException.BKDigestMatchException;
 import org.apache.bookkeeper.client.api.LedgerEntries;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.client.impl.LedgerEntriesImpl;
 import org.apache.bookkeeper.client.impl.LedgerEntryImpl;
 import org.apache.bookkeeper.common.util.SafeRunnable;
@@ -97,12 +98,13 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
             this.eId = eId;
 
             if (clientCtx.getConf().enableReorderReadSequence) {
-                writeSet = clientCtx.getPlacementPolicy().reorderReadSequence(
+                writeSet = clientCtx.getPlacementPolicy()
+                    .reorderReadSequence(
                             ensemble,
                             lh.getBookiesHealthInfo(),
-                            lh.distributionSchedule.getWriteSet(eId));
+                            lh.getWriteSetForReadOperation(eId));
             } else {
-                writeSet = lh.distributionSchedule.getWriteSet(eId);
+                writeSet = lh.getWriteSetForReadOperation(eId);
             }
         }
 
@@ -129,6 +131,9 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
          */
         boolean complete(int bookieIndex, BookieSocketAddress host, final ByteBuf buffer) {
             ByteBuf content;
+            if (isComplete()) {
+                return false;
+            }
             try {
                 content = lh.macManager.verifyDigestAndReturnData(eId, buffer);
             } catch (BKDigestMatchException e) {
@@ -208,6 +213,8 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
                             errMsg, lh.ledgerId, eId, host);
                 }
             }
+
+            lh.recordReadErrorOnBookie(bookieIndex);
         }
 
         /**
@@ -486,7 +493,6 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
         return speculativeTask;
     }
 
-    // I don't think this is ever used in production code -Ivan
     PendingReadOp parallelRead(boolean enabled) {
         this.parallelRead = enabled;
         return this;
@@ -506,8 +512,8 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
         List<BookieSocketAddress> ensemble = null;
         do {
             if (i == nextEnsembleChange) {
-                ensemble = getLedgerMetadata().getEnsemble(i);
-                nextEnsembleChange = getLedgerMetadata().getNextEnsembleChange(i);
+                ensemble = getLedgerMetadata().getEnsembleAt(i);
+                nextEnsembleChange = LedgerMetadataUtils.getNextEnsembleChange(getLedgerMetadata(), i);
             }
             LedgerEntryRequest entry;
             if (parallelRead) {

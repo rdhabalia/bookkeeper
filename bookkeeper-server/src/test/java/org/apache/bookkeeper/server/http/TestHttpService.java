@@ -26,12 +26,15 @@ import static org.junit.Assert.assertTrue;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.util.concurrent.UncheckedExecutionException;
+
 import java.io.File;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Future;
+
 import lombok.Cleanup;
+
 import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.ClientUtil;
 import org.apache.bookkeeper.client.LedgerHandle;
@@ -48,8 +51,8 @@ import org.apache.bookkeeper.meta.LedgerManagerFactory;
 import org.apache.bookkeeper.meta.LedgerUnderreplicationManager;
 import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.replication.AuditorElector;
+import org.apache.bookkeeper.server.http.service.BookieStateService.BookieState;
 import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
-
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -82,6 +85,7 @@ public class TestHttpService extends BookKeeperClusterTestCase {
     public void setUp() throws Exception {
         super.setUp();
         baseConf.setMetadataServiceUri(zkUtil.getMetadataServiceUri());
+        baseClientConf.setStoreSystemtimeAsLedgerCreationTime(true);
         this.bkHttpServiceProvider = new BKHttpServiceProvider.Builder()
             .setBookieServer(bs.get(numberOfBookies - 1))
             .setServerConfiguration(baseConf)
@@ -382,11 +386,15 @@ public class TestHttpService extends BookKeeperClusterTestCase {
         HttpServiceResponse response2 = getLedgerMetaService.handle(request2);
         assertEquals(HttpServer.StatusCode.OK.getValue(), response2.getStatusCode());
         @SuppressWarnings("unchecked")
-        HashMap<String, String> respBody = JsonUtil.fromJson(response2.getBody(), HashMap.class);
+        HashMap<String, Object> respBody = JsonUtil.fromJson(response2.getBody(), HashMap.class);
         assertEquals(1, respBody.size());
+        @SuppressWarnings("unchecked")
+        HashMap<String, Object> expected = JsonUtil.fromJson(JsonUtil.toJson(lh[0].getLedgerMetadata()), HashMap.class);
+        @SuppressWarnings("unchecked")
+        HashMap<String, Object> actual = (HashMap<String, Object>) respBody.get(ledgerId.toString());
+
         // verify LedgerMetadata content is equal
-        assertTrue(respBody.get(ledgerId.toString()).toString()
-          .equals(new String(lh[0].getLedgerMetadata().serialize())));
+        assertTrue(Maps.difference(expected, actual).areEqual());
     }
 
     @Test
@@ -741,4 +749,121 @@ public class TestHttpService extends BookKeeperClusterTestCase {
         stopAuditorElector();
     }
 
+    @Test
+    public void testTriggerGCService() throws Exception {
+        baseConf.setMetadataServiceUri(zkUtil.getMetadataServiceUri());
+        BookKeeper.DigestType digestType = BookKeeper.DigestType.CRC32;
+        int numLedgers = 4;
+        int numMsgs = 100;
+        LedgerHandle[] lh = new LedgerHandle[numLedgers];
+        // create ledgers
+        for (int i = 0; i < numLedgers; i++) {
+            lh[i] = bkc.createLedger(digestType, "".getBytes());
+        }
+        String content = "Apache BookKeeper is cool!";
+        // add entries
+        for (int i = 0; i < numMsgs; i++) {
+            for (int j = 0; j < numLedgers; j++) {
+                lh[j].addEntry(content.getBytes());
+            }
+        }
+        // close ledgers
+        for (int i = 0; i < numLedgers; i++) {
+            lh[i].close();
+        }
+        HttpEndpointService triggerGCService = bkHttpServiceProvider
+            .provideHttpEndpointService(HttpServer.ApiType.GC);
+
+        //1,  GET, should return OK
+        HttpServiceRequest request1 = new HttpServiceRequest(null, HttpServer.Method.GET, null);
+        HttpServiceResponse response1 = triggerGCService.handle(request1);
+        assertEquals(HttpServer.StatusCode.OK.getValue(), response1.getStatusCode());
+        assertTrue(response1.getBody().contains("\"is_in_force_gc\" : \"false\""));
+
+        //2, PUT, should return OK
+        HttpServiceRequest request2 = new HttpServiceRequest(null, HttpServer.Method.PUT, null);
+        HttpServiceResponse response2 = triggerGCService.handle(request2);
+        assertEquals(HttpServer.StatusCode.OK.getValue(), response2.getStatusCode());
+    }
+
+    @Test
+    public void testGCDetailsService() throws Exception {
+        baseConf.setMetadataServiceUri(zkUtil.getMetadataServiceUri());
+        BookKeeper.DigestType digestType = BookKeeper.DigestType.CRC32;
+        int numLedgers = 4;
+        int numMsgs = 100;
+        LedgerHandle[] lh = new LedgerHandle[numLedgers];
+        // create ledgers
+        for (int i = 0; i < numLedgers; i++) {
+            lh[i] = bkc.createLedger(digestType, "".getBytes());
+        }
+        String content = "This is test for GC details service!";
+        // add entries
+        for (int i = 0; i < numMsgs; i++) {
+            for (int j = 0; j < numLedgers; j++) {
+                lh[j].addEntry(content.getBytes());
+            }
+        }
+        // close ledgers
+        for (int i = 0; i < numLedgers; i++) {
+            lh[i].close();
+        }
+        HttpEndpointService gcDetailsService = bkHttpServiceProvider
+            .provideHttpEndpointService(HttpServer.ApiType.GC_DETAILS);
+
+        // force trigger a GC
+        HttpEndpointService triggerGCService = bkHttpServiceProvider
+            .provideHttpEndpointService(HttpServer.ApiType.GC);
+        HttpServiceRequest request0 = new HttpServiceRequest(null, HttpServer.Method.PUT, null);
+        HttpServiceResponse response0 = triggerGCService.handle(request0);
+        assertEquals(HttpServer.StatusCode.OK.getValue(), response0.getStatusCode());
+
+        //1,  GET, should return OK
+        HttpServiceRequest request1 = new HttpServiceRequest(null, HttpServer.Method.GET, null);
+        HttpServiceResponse response1 = gcDetailsService.handle(request1);
+        assertEquals(HttpServer.StatusCode.OK.getValue(), response1.getStatusCode());
+        LOG.info("Get response: {}", response1.getBody());
+
+        //2, PUT, should return NOT_FOUND
+        HttpServiceRequest request3 = new HttpServiceRequest(null, HttpServer.Method.PUT, null);
+        HttpServiceResponse response3 = gcDetailsService.handle(request3);
+        assertEquals(HttpServer.StatusCode.NOT_FOUND.getValue(), response3.getStatusCode());
+    }
+
+    @Test
+    public void testGetBookieState() throws Exception {
+        HttpEndpointService bookieStateServer = bkHttpServiceProvider
+                .provideHttpEndpointService(HttpServer.ApiType.BOOKIE_STATE);
+
+        HttpServiceRequest request1 = new HttpServiceRequest(null, HttpServer.Method.GET, null);
+        HttpServiceResponse response1 = bookieStateServer.handle(request1);
+        assertEquals(HttpServer.StatusCode.OK.getValue(), response1.getStatusCode());
+
+        BookieState bs = JsonUtil.fromJson(response1.getBody(), BookieState.class);
+        assertEquals(true, bs.isRunning());
+        assertEquals(false, bs.isReadOnly());
+        assertEquals(true, bs.isAvailableForHighPriorityWrites());
+        assertEquals(false, bs.isShuttingDown());
+    }
+
+    @Test
+    public void testGetBookieIsReady() throws Exception {
+        HttpEndpointService bookieStateServer = bkHttpServiceProvider
+                .provideHttpEndpointService(HttpServer.ApiType.BOOKIE_IS_READY);
+
+        HttpServiceRequest request1 = new HttpServiceRequest(null, HttpServer.Method.GET, null);
+        HttpServiceResponse response1 = bookieStateServer.handle(request1);
+        assertEquals(HttpServer.StatusCode.OK.getValue(), response1.getStatusCode());
+
+        // Try using POST instead of GET
+        HttpServiceRequest request2 = new HttpServiceRequest(null, HttpServer.Method.POST, null);
+        HttpServiceResponse response2 = bookieStateServer.handle(request2);
+        assertEquals(HttpServer.StatusCode.NOT_FOUND.getValue(), response2.getStatusCode());
+
+        // Simulate bookies shutting down
+        bs.forEach(bookieServer -> bookieServer.getBookie().getStateManager().forceToShuttingDown());
+        HttpServiceRequest request3 = new HttpServiceRequest(null, HttpServer.Method.GET, null);
+        HttpServiceResponse response3 = bookieStateServer.handle(request3);
+        assertEquals(HttpServer.StatusCode.SERVICE_UNAVAILABLE.getValue(), response3.getStatusCode());
+    }
 }

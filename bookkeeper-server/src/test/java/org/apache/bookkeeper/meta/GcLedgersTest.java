@@ -21,8 +21,6 @@
 
 package org.apache.bookkeeper.meta;
 
-import static org.apache.bookkeeper.bookie.BookKeeperServerStats.ACTIVE_LEDGER_COUNT;
-import static org.apache.bookkeeper.bookie.BookKeeperServerStats.DELETED_LEDGER_COUNT;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
@@ -30,7 +28,10 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import com.google.common.collect.Lists;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -44,10 +45,12 @@ import java.util.Random;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+
 import org.apache.bookkeeper.bookie.BookieException;
 import org.apache.bookkeeper.bookie.CheckpointSource;
 import org.apache.bookkeeper.bookie.CheckpointSource.Checkpoint;
@@ -61,12 +64,14 @@ import org.apache.bookkeeper.bookie.LedgerDirsManager;
 import org.apache.bookkeeper.bookie.ScanAndCompareGarbageCollector;
 import org.apache.bookkeeper.bookie.StateManager;
 import org.apache.bookkeeper.client.BKException;
-import org.apache.bookkeeper.client.BookKeeper.DigestType;
-import org.apache.bookkeeper.client.LedgerMetadata;
+import org.apache.bookkeeper.client.LedgerMetadataBuilder;
+import org.apache.bookkeeper.client.api.DigestType;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.common.util.Watcher;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.meta.LedgerManager.LedgerRange;
 import org.apache.bookkeeper.meta.LedgerManager.LedgerRangeIterator;
+import org.apache.bookkeeper.net.BookieSocketAddress;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.stats.NullStatsLogger;
 import org.apache.bookkeeper.stats.StatsLogger;
@@ -92,6 +97,8 @@ public class GcLedgersTest extends LedgerManagerTestCase {
      */
     private void createLedgers(int numLedgers, final Set<Long> createdLedgers) throws IOException {
         final AtomicInteger expected = new AtomicInteger(numLedgers);
+        List<BookieSocketAddress> ensemble = Lists.newArrayList(new BookieSocketAddress("192.0.2.1", 1234));
+
         for (int i = 0; i < numLedgers; i++) {
             getLedgerIdGenerator().generateLedgerId(new GenericCallback<Long>() {
                 @Override
@@ -106,20 +113,22 @@ public class GcLedgersTest extends LedgerManagerTestCase {
                         return;
                     }
 
-                    getLedgerManager().createLedgerMetadata(ledgerId,
-                            new LedgerMetadata(1, 1, 1, DigestType.MAC, "".getBytes()),
-                            new GenericCallback<Versioned<LedgerMetadata>>() {
-                                @Override
-                                public void operationComplete(int rc, Versioned<LedgerMetadata> writtenMetadata) {
-                                    if (rc == BKException.Code.OK) {
-                                        activeLedgers.put(ledgerId, true);
-                                        createdLedgers.add(ledgerId);
-                                    }
-                                    synchronized (expected) {
-                                        int num = expected.decrementAndGet();
-                                        if (num == 0) {
-                                            expected.notify();
-                                        }
+                    LedgerMetadata md = LedgerMetadataBuilder.create()
+                        .withDigestType(DigestType.CRC32C)
+                        .withPassword(new byte[0])
+                        .withEnsembleSize(1).withWriteQuorumSize(1).withAckQuorumSize(1)
+                        .newEnsembleEntry(0L, ensemble).build();
+
+                    getLedgerManager().createLedgerMetadata(ledgerId, md)
+                        .whenComplete((result, exception) -> {
+                                if (exception == null) {
+                                    activeLedgers.put(ledgerId, true);
+                                    createdLedgers.add(ledgerId);
+                                }
+                                synchronized (expected) {
+                                    int num = expected.decrementAndGet();
+                                    if (num == 0) {
+                                        expected.notify();
                                     }
                                 }
                             });
@@ -138,18 +147,7 @@ public class GcLedgersTest extends LedgerManagerTestCase {
     }
 
     private void removeLedger(long ledgerId) throws Exception {
-        final AtomicInteger rc = new AtomicInteger(0);
-        final CountDownLatch latch = new CountDownLatch(1);
-        getLedgerManager().removeLedgerMetadata(ledgerId, Version.ANY,
-                new GenericCallback<Void>() {
-                    @Override
-                    public void operationComplete(int rc2, Void result) {
-                        rc.set(rc2);
-                        latch.countDown();
-                    }
-                   });
-        assertTrue(latch.await(10, TimeUnit.SECONDS));
-        assertEquals("Remove should have succeeded for ledgerId: " + ledgerId, 0, rc.get());
+        getLedgerManager().removeLedgerMetadata(ledgerId, Version.ANY).get(10, TimeUnit.SECONDS);
     }
 
     @Test
@@ -170,18 +168,7 @@ public class GcLedgersTest extends LedgerManagerTestCase {
         // random remove several ledgers
         for (int i = 0; i < numRemovedLedgers; i++) {
             long ledgerId = tmpList.get(i);
-            synchronized (removedLedgers) {
-                getLedgerManager().removeLedgerMetadata(ledgerId, Version.ANY,
-                    new GenericCallback<Void>() {
-                        @Override
-                        public void operationComplete(int rc, Void result) {
-                            synchronized (removedLedgers) {
-                                removedLedgers.notify();
-                            }
-                        }
-                   });
-                removedLedgers.wait();
-            }
+            getLedgerManager().removeLedgerMetadata(ledgerId, Version.ANY).get();
             removedLedgers.add(ledgerId);
             createdLedgers.remove(ledgerId);
         }
@@ -190,7 +177,7 @@ public class GcLedgersTest extends LedgerManagerTestCase {
         final CountDownLatch endLatch = new CountDownLatch(2);
         final CompactableLedgerStorage mockLedgerStorage = new MockLedgerStorage();
         TestStatsProvider stats = new TestStatsProvider();
-        final GarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(getLedgerManager(),
+        final ScanAndCompareGarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(getLedgerManager(),
                 mockLedgerStorage, baseConf, stats.getStatsLogger("gc"));
         Thread gcThread = new Thread() {
             @Override
@@ -253,11 +240,8 @@ public class GcLedgersTest extends LedgerManagerTestCase {
             assertTrue(activeLedgers.containsKey(ledger));
         }
         assertTrue(
-                "Wrong DELETED_LEDGER_COUNT",
-                stats.getCounter("gc." + DELETED_LEDGER_COUNT).get() == removedLedgers.size());
-        assertTrue(
                 "Wrong ACTIVE_LEDGER_COUNT",
-                stats.getGauge("gc." + ACTIVE_LEDGER_COUNT).getSample().intValue() == createdLedgers.size());
+                garbageCollector.getNumActiveLedgers() == createdLedgers.size());
     }
 
     @Test
@@ -270,7 +254,7 @@ public class GcLedgersTest extends LedgerManagerTestCase {
 
         MockLedgerStorage mockLedgerStorage = new MockLedgerStorage();
         TestStatsProvider stats = new TestStatsProvider();
-        final GarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(getLedgerManager(),
+        final ScanAndCompareGarbageCollector garbageCollector = new ScanAndCompareGarbageCollector(getLedgerManager(),
                 mockLedgerStorage, baseConf, stats.getStatsLogger("gc"));
         GarbageCollector.GarbageCleaner cleaner = new GarbageCollector.GarbageCleaner() {
                 @Override
@@ -289,36 +273,25 @@ public class GcLedgersTest extends LedgerManagerTestCase {
         garbageCollector.gc(cleaner);
         assertNull("Should have cleaned nothing", cleaned.poll());
         assertTrue(
-                "Wrong DELETED_LEDGER_COUNT",
-                stats.getCounter("gc." + DELETED_LEDGER_COUNT).get() == 0);
-        assertTrue(
                 "Wrong ACTIVE_LEDGER_COUNT",
-                stats.getGauge(
-                        "gc." + ACTIVE_LEDGER_COUNT).getSample().intValue() == numLedgers);
+                garbageCollector.getNumActiveLedgers() == numLedgers);
 
         long last = createdLedgers.last();
         removeLedger(last);
         garbageCollector.gc(cleaner);
         assertNotNull("Should have cleaned something", cleaned.peek());
         assertEquals("Should have cleaned last ledger" + last, (long) last, (long) cleaned.poll());
-        assertTrue(
-                "Wrong DELETED_LEDGER_COUNT",
-                stats.getCounter("gc." + DELETED_LEDGER_COUNT).get() == 1);
 
         long first = createdLedgers.first();
         removeLedger(first);
         garbageCollector.gc(cleaner);
         assertNotNull("Should have cleaned something", cleaned.peek());
         assertEquals("Should have cleaned first ledger" + first, (long) first, (long) cleaned.poll());
-        assertTrue(
-                "Wrong DELETED_LEDGER_COUNT",
-                stats.getCounter("gc." + DELETED_LEDGER_COUNT).get() == 2);
 
         garbageCollector.gc(cleaner);
         assertTrue(
                 "Wrong ACTIVE_LEDGER_COUNT",
-                stats.getGauge(
-                        "gc." + ACTIVE_LEDGER_COUNT).getSample().intValue() == (numLedgers - 2));
+                garbageCollector.getNumActiveLedgers() == (numLedgers - 2));
 
     }
 
@@ -504,10 +477,12 @@ public class GcLedgersTest extends LedgerManagerTestCase {
 
         createLedgers(numLedgers, createdLedgers);
 
+        CompletableFuture<Versioned<LedgerMetadata>> errorFuture = new CompletableFuture<>();
+        errorFuture.completeExceptionally(new BKException.BKNoSuchLedgerExistsException());
         LedgerManager mockLedgerManager = new CleanupLedgerManager(getLedgerManager()) {
             @Override
-            public void readLedgerMetadata(long ledgerId, GenericCallback<Versioned<LedgerMetadata>> readCb) {
-                readCb.operationComplete(BKException.Code.NoSuchLedgerExistsException, null);
+            public CompletableFuture<Versioned<LedgerMetadata>> readLedgerMetadata(long ledgerId) {
+                return errorFuture;
             }
         };
 
@@ -546,10 +521,12 @@ public class GcLedgersTest extends LedgerManagerTestCase {
 
         createLedgers(numLedgers, createdLedgers);
 
+        CompletableFuture<Versioned<LedgerMetadata>> errorFuture = new CompletableFuture<>();
+        errorFuture.completeExceptionally(new BKException.ZKException());
         LedgerManager mockLedgerManager = new CleanupLedgerManager(getLedgerManager()) {
             @Override
-            public void readLedgerMetadata(long ledgerId, GenericCallback<Versioned<LedgerMetadata>> readCb) {
-                readCb.operationComplete(BKException.Code.ZKException, null);
+            public CompletableFuture<Versioned<LedgerMetadata>> readLedgerMetadata(long ledgerId) {
+                return errorFuture;
             }
         };
 
@@ -595,7 +572,8 @@ public class GcLedgersTest extends LedgerManagerTestCase {
             StateManager stateManager,
             CheckpointSource checkpointSource,
             Checkpointer checkpointer,
-            StatsLogger statsLogger) throws IOException {
+            StatsLogger statsLogger,
+            ByteBufAllocator allocator) throws IOException {
         }
 
         @Override
@@ -699,6 +677,12 @@ public class GcLedgersTest extends LedgerManagerTestCase {
                                                      Watcher<LastAddConfirmedUpdateNotification> watcher)
                 throws IOException {
             return false;
+        }
+
+        @Override
+        public void cancelWaitForLastAddConfirmedUpdate(long ledgerId,
+                                                        Watcher<LastAddConfirmedUpdateNotification> watcher)
+                throws IOException {
         }
     }
 }

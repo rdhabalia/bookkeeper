@@ -37,6 +37,7 @@ import static org.junit.Assert.fail;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.buffer.UnpooledByteBufAllocator;
 
 import java.io.File;
 import java.io.IOException;
@@ -48,6 +49,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,12 +58,11 @@ import org.apache.bookkeeper.client.BookKeeper;
 import org.apache.bookkeeper.client.BookKeeper.DigestType;
 import org.apache.bookkeeper.client.LedgerEntry;
 import org.apache.bookkeeper.client.LedgerHandle;
-import org.apache.bookkeeper.client.LedgerMetadata;
+import org.apache.bookkeeper.client.api.LedgerMetadata;
 import org.apache.bookkeeper.conf.ServerConfiguration;
 import org.apache.bookkeeper.conf.TestBKConfiguration;
 import org.apache.bookkeeper.meta.LedgerManager;
 import org.apache.bookkeeper.proto.BookieServer;
-import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.GenericCallback;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.LedgerMetadataListener;
 import org.apache.bookkeeper.proto.BookkeeperInternalCallbacks.Processor;
 import org.apache.bookkeeper.proto.checksum.DigestManager;
@@ -70,7 +71,6 @@ import org.apache.bookkeeper.test.BookKeeperClusterTestCase;
 import org.apache.bookkeeper.test.TestStatsProvider;
 import org.apache.bookkeeper.util.DiskChecker;
 import org.apache.bookkeeper.util.HardLink;
-import org.apache.bookkeeper.util.MathUtils;
 import org.apache.bookkeeper.util.TestUtils;
 import org.apache.bookkeeper.versioning.Version;
 import org.apache.bookkeeper.versioning.Versioned;
@@ -266,9 +266,10 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
                     null,
                     cp,
                     Checkpointer.NULL,
-                    NullStatsLogger.INSTANCE);
+                    NullStatsLogger.INSTANCE,
+                    UnpooledByteBufAllocator.DEFAULT);
                 storage.start();
-                long startTime = MathUtils.now();
+                long startTime = System.currentTimeMillis();
                 storage.gcThread.enableForceGC();
                 storage.gcThread.triggerGC().get(); //major
                 storage.gcThread.triggerGC().get(); //minor
@@ -617,7 +618,8 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
         Bookie newbookie = new Bookie(newBookieConf);
 
         DigestManager digestManager = DigestManager.instantiate(ledgerId, passwdBytes,
-                BookKeeper.DigestType.toProtoDigestType(digestType), baseClientConf.getUseV2WireProtocol());
+                BookKeeper.DigestType.toProtoDigestType(digestType), UnpooledByteBufAllocator.DEFAULT,
+                baseClientConf.getUseV2WireProtocol());
 
         for (long entryId = 0; entryId <= lastAddConfirmed; entryId++) {
             ByteBuf readEntryBufWithChecksum = newbookie.readEntry(ledgerId, entryId);
@@ -861,7 +863,8 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
             null,
             checkpointSource,
             Checkpointer.NULL,
-            NullStatsLogger.INSTANCE);
+            NullStatsLogger.INSTANCE,
+            UnpooledByteBufAllocator.DEFAULT);
         ledgers.add(1L);
         ledgers.add(2L);
         ledgers.add(3L);
@@ -886,7 +889,8 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
             dirs, dirs, null,
             checkpointSource,
             Checkpointer.NULL,
-            NullStatsLogger.INSTANCE);
+            NullStatsLogger.INSTANCE,
+            UnpooledByteBufAllocator.DEFAULT);
         storage.start();
         for (int i = 0; i < 10; i++) {
             if (!log0.exists()) {
@@ -911,31 +915,35 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
             null,
             checkpointSource,
             Checkpointer.NULL,
-            NullStatsLogger.INSTANCE);
+            NullStatsLogger.INSTANCE,
+            UnpooledByteBufAllocator.DEFAULT);
         storage.getEntry(1, 1); // entry should exist
     }
 
     private LedgerManager getLedgerManager(final Set<Long> ledgers) {
         LedgerManager manager = new LedgerManager() {
                 @Override
-                public void createLedgerMetadata(long lid, LedgerMetadata metadata,
-                                                 GenericCallback<Versioned<LedgerMetadata>> cb) {
+                public CompletableFuture<Versioned<LedgerMetadata>> createLedgerMetadata(long lid,
+                                                                                         LedgerMetadata metadata) {
                     unsupported();
+                    return null;
                 }
                 @Override
-                public void removeLedgerMetadata(long ledgerId, Version version,
-                                                 GenericCallback<Void> vb) {
+                public CompletableFuture<Void> removeLedgerMetadata(long ledgerId, Version version) {
                     unsupported();
+                    return null;
                 }
                 @Override
-                public void readLedgerMetadata(long ledgerId, GenericCallback<Versioned<LedgerMetadata>> readCb) {
+                public CompletableFuture<Versioned<LedgerMetadata>> readLedgerMetadata(long ledgerId) {
                     unsupported();
+                    return null;
                 }
                 @Override
-                public void writeLedgerMetadata(long ledgerId, LedgerMetadata metadata,
-                                                Version currentVersion,
-                                                GenericCallback<Versioned<LedgerMetadata>> cb) {
+                public CompletableFuture<Versioned<LedgerMetadata>> writeLedgerMetadata(long ledgerId,
+                                                                                        LedgerMetadata metadata,
+                                                                                        Version currentVersion) {
                     unsupported();
+                    return null;
                 }
                 @Override
                 public void asyncProcessLedgers(Processor<Long> processor,
@@ -960,6 +968,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
                     LOG.error("Unsupported operation called", new Exception());
                     throw new RuntimeException("Unsupported op");
                 }
+
                 @Override
                 public LedgerRangeIterator getLedgerRanges() {
                     final AtomicBoolean hasnext = new AtomicBoolean(true);
@@ -1018,7 +1027,8 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
             null,
             checkpointSource,
             Checkpointer.NULL,
-            NullStatsLogger.INSTANCE);
+            NullStatsLogger.INSTANCE,
+            UnpooledByteBufAllocator.DEFAULT);
 
         double threshold = 0.1;
         // shouldn't throw exception
@@ -1060,7 +1070,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
         };
         InterleavedLedgerStorage storage = new InterleavedLedgerStorage();
         storage.initialize(conf, manager, dirs, dirs, null, checkpointSource,
-            Checkpointer.NULL, NullStatsLogger.INSTANCE);
+            Checkpointer.NULL, NullStatsLogger.INSTANCE, UnpooledByteBufAllocator.DEFAULT);
 
         for (long ledger = 0; ledger <= 10; ledger++) {
             ledgers.add(ledger);
@@ -1078,7 +1088,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
 
         storage = new InterleavedLedgerStorage();
         storage.initialize(conf, manager, dirs, dirs, null, checkpointSource,
-                           Checkpointer.NULL, NullStatsLogger.INSTANCE);
+                           Checkpointer.NULL, NullStatsLogger.INSTANCE, UnpooledByteBufAllocator.DEFAULT);
 
         long startingEntriesCount = storage.gcThread.entryLogger.getLeastUnflushedLogId()
             - storage.gcThread.scannedLogId;
@@ -1155,7 +1165,8 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
             null,
             cp,
             Checkpointer.NULL,
-            stats.getStatsLogger("storage"));
+            stats.getStatsLogger("storage"),
+            UnpooledByteBufAllocator.DEFAULT);
         storage.start();
 
         int majorCompactions = stats.getCounter("storage.gc." + MAJOR_COMPACTION_COUNT).get().intValue();
@@ -1170,7 +1181,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
         storage.gcThread.suspendMajorGC();
 
         Thread.sleep(1000);
-        long startTime = MathUtils.now();
+        long startTime = System.currentTimeMillis();
         majorCompactions = stats.getCounter("storage.gc." + MAJOR_COMPACTION_COUNT).get().intValue();
         Thread.sleep(conf.getMajorCompactionInterval() * 1000
                    + conf.getGcWaitTime());
@@ -1190,7 +1201,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
         storage.gcThread.suspendMinorGC();
 
         Thread.sleep(1000);
-        startTime = MathUtils.now();
+        startTime = System.currentTimeMillis();
         minorCompactions = stats.getCounter("storage.gc." + MINOR_COMPACTION_COUNT).get().intValue();
         Thread.sleep(conf.getMajorCompactionInterval() * 1000
                    + conf.getGcWaitTime());
@@ -1380,7 +1391,12 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
     private static class MockTransactionalEntryLogCompactor extends TransactionalEntryLogCompactor {
 
         public MockTransactionalEntryLogCompactor(GarbageCollectorThread gcThread) {
-            super(gcThread);
+            super(gcThread.conf,
+                  gcThread.entryLogger,
+                  gcThread.ledgerStorage,
+                  (long entry) -> {
+                gcThread.removeEntryLog(entry);
+            });
         }
 
         synchronized void compactWithIndexFlushFailure(EntryLogMetadata metadata) {
@@ -1402,7 +1418,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
                 LOG.info("Compaction for {} end in PartialFlushIndexPhase.", metadata.getEntryLogId());
                 return;
             }
-            gcThread.removeEntryLog(metadata.getEntryLogId());
+            logRemovalListener.removeEntryLog(metadata.getEntryLogId());
             LOG.info("Compacted entry log : {}.", metadata.getEntryLogId());
         }
 
@@ -1425,7 +1441,7 @@ public abstract class CompactionTest extends BookKeeperClusterTestCase {
                 LOG.info("Compaction for entry log {} end in UpdateIndexPhase.", metadata.getEntryLogId());
                 return;
             }
-            gcThread.removeEntryLog(metadata.getEntryLogId());
+            logRemovalListener.removeEntryLog(metadata.getEntryLogId());
             LOG.info("Compacted entry log : {}.", metadata.getEntryLogId());
         }
 
