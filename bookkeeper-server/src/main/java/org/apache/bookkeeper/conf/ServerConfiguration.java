@@ -31,6 +31,7 @@ import org.apache.bookkeeper.stats.StatsProvider;
 import org.apache.bookkeeper.util.BookKeeperConstants;
 import org.apache.bookkeeper.util.ReflectionUtils;
 import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * Configuration manages server-side settings.
@@ -802,8 +803,9 @@ public class ServerConfiguration extends AbstractConfiguration<ServerConfigurati
      */
     public String[] getJournalDirNames() {
         String[] journalDirs = this.getStringArray(JOURNAL_DIRS);
-        if (journalDirs == null || journalDirs.length == 0) {
-            return new String[] {getJournalDirName()};
+        if (journalDirs == null || journalDirs.length == 0
+                || (journalDirs.length == 1 && StringUtils.isEmpty(journalDirs[0]))) {
+            return new String[] { getJournalDirName() };
         }
         return journalDirs;
     }
