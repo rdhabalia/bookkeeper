@@ -172,7 +172,7 @@ public class BookieShell implements Tool {
     static final String CMD_LISTFILESONDISC = "listfilesondisc";
     static final String CMD_UPDATECOOKIE = "updatecookie";
     static final String CMD_UPDATELEDGER = "updateledgers";
-    static final String CMD_MOVELEDGER = "moveledgers";
+    static final String CMD_UPDATE_BOOKIE_IN_LEDGER = "updateBookieInLedger";
     static final String CMD_DELETELEDGER = "deleteledger";
     static final String CMD_BOOKIEINFO = "bookieinfo";
     static final String CMD_DECOMMISSIONBOOKIE = "decommissionbookie";
@@ -2158,11 +2158,7 @@ public class BookieShell implements Tool {
 
         UpdateLedgerCmd() {
             super(CMD_UPDATELEDGER);
-            opts.addOption("b", "bookieId", true, "Bookie Id provied when need to change hostname to ip and vice versa.(Mutually exclusive with srcBookie and destBookie)");
-            opts.addOption("sb", "srcBookie", true,
-                    "Source bookie which needs to be replaced by destination bookie. (Mutually inclusive with destBookie)");
-            opts.addOption("db", "destBookie", true,
-                    "Destination bookie which needs to be updated from source bookie. (Mutually inclusive with srcBookie)");
+            opts.addOption("b", "bookieId", true, "Bookie Id");
             opts.addOption("s", "updatespersec", true, "Number of ledgers updating per second (default: 5 per sec)");
             opts.addOption("l", "limit", true, "Maximum number of ledgers to update (default: no limit)");
             opts.addOption("v", "verbose", true, "Print status of the ledger updation (default: false)");
@@ -2177,15 +2173,13 @@ public class BookieShell implements Tool {
 
         @Override
         String getDescription() {
-            return "Update ledgers with options a. (useful when update bookie id from ip to hostname or vice-versa) "
-                    + "update hostname<->ip by providing bookieId flag "
-                    + "b. (useful when re-ip of host) replace srcBookie with destBookie. (this may take a long time).";
+            return "Update bookie id in ledgers (this may take a long time).";
         }
 
         @Override
         String getUsage() {
-            return "updateledgers [-bookieId <hostname|ip>] [-srcBookie <source bookie>] [-destBookie <destination bookie>] "
-                    + "[-updatespersec N] [-limit N] [-verbose true/false] [-printprogress N]";
+            return "updateledgers -bookieId <hostname|ip> [-updatespersec N] [-limit N] [-verbose true/false] "
+                    + "[-printprogress N]";
         }
 
         @Override
@@ -2265,14 +2259,15 @@ public class BookieShell implements Tool {
     }
 
     /**
-     * Update ledger command.
+     * Update bookie into ledger command.
      */
-    class MoveLedgerCmd extends MyCommand {
+    class UpdateBookieInLedgerCmd extends MyCommand {
         private final Options opts = new Options();
 
-        MoveLedgerCmd() {
-            super(CMD_MOVELEDGER);
-            opts.addOption("b", "bookieId", true, "Bookie Id");
+        UpdateBookieInLedgerCmd() {
+            super(CMD_UPDATE_BOOKIE_IN_LEDGER);
+            opts.addOption("sb", "srcBookie", true, "Source bookie which needs to be replaced by destination bookie.");
+            opts.addOption("db", "destBookie", true, "Destination bookie which replaces source bookie.");
             opts.addOption("s", "updatespersec", true, "Number of ledgers updating per second (default: 5 per sec)");
             opts.addOption("l", "limit", true, "Maximum number of ledgers to update (default: no limit)");
             opts.addOption("v", "verbose", true, "Print status of the ledger updation (default: false)");
@@ -2287,34 +2282,38 @@ public class BookieShell implements Tool {
 
         @Override
         String getDescription() {
-            return "Update bookie id in ledgers (this may take a long time).";
+            return "Replace bookie in ledger metadata. (useful when re-ip of host) "
+                    + "replace srcBookie with destBookie. (this may take a long time).";
         }
 
         @Override
         String getUsage() {
-            return "updateledgers -srcBookieId -destBookieId [-updatespersec N] [-limit N] [-verbose true/false] "
-                    + "[-printprogress N]";
+            return "updateBookieInLedger -srcBookie <source bookie> -destBookie <destination bookie> "
+                    + "[-updatespersec N] [-limit N] [-verbose true/false] [-printprogress N]";
         }
 
         @Override
         int runCmd(CommandLine cmdLine) throws Exception {
-            final String bookieId = cmdLine.getOptionValue("bookieId");
-            if (StringUtils.isBlank(bookieId)) {
-                LOG.error("Invalid argument list!");
+            final String srcBookie = cmdLine.getOptionValue("srcBookie");
+            final String destBookie = cmdLine.getOptionValue("destBookie");
+            if (StringUtils.isBlank(srcBookie) || StringUtils.isBlank(destBookie)) {
+                LOG.error("Invalid argument list (srcBookie and destBookie must be provided)!");
                 this.printUsage();
                 return -1;
             }
-            if (!StringUtils.equals(bookieId, "hostname") && !StringUtils.equals(bookieId, "ip")) {
-                LOG.error("Invalid option value {} for bookieId, expected hostname/ip", bookieId);
-                this.printUsage();
+            BookieSocketAddress srcBookieAddress;
+            BookieSocketAddress destBookieAddress;
+            try {
+                String[] bookieAddress = srcBookie.split(":");
+                srcBookieAddress = new BookieSocketAddress(bookieAddress[0], Integer.parseInt(bookieAddress[1]));
+                bookieAddress = destBookie.split(":");
+                destBookieAddress = new BookieSocketAddress(bookieAddress[0], Integer.parseInt(bookieAddress[1]));
+            } catch (Exception e) {
+                LOG.error("Bookie address must in <address>:<port> format");
                 return -1;
             }
-            boolean useHostName = getOptionalValue(bookieId, "hostname");
-            if (!bkConf.getUseHostNameAsBookieID() && useHostName) {
-                LOG.error("Expects configuration useHostNameAsBookieID=true as the option value passed is 'hostname'");
-                return -1;
-            } else if (bkConf.getUseHostNameAsBookieID() && !useHostName) {
-                LOG.error("Expects configuration useHostNameAsBookieID=false as the option value passed is 'ip'");
+            if (StringUtils.equals(srcBookie, destBookie)) {
+                LOG.error("srcBookie and destBookie can't be the same.");
                 return -1;
             }
             final int rate = getOptionIntValue(cmdLine, "updatespersec", 5);
@@ -2340,13 +2339,14 @@ public class BookieShell implements Tool {
             }
             final ClientConfiguration conf = new ClientConfiguration();
             conf.addConfiguration(bkConf);
-            final BookKeeper bk = new BookKeeper(conf);
             final BookKeeperAdmin admin = new BookKeeperAdmin(conf);
+            if (admin.getAvailableBookies().contains(srcBookieAddress)) {
+                admin.close();
+                LOG.error("Source bookie {} can't be active", srcBookieAddress);
+                return -1;
+            }
+            final BookKeeper bk = new BookKeeper(conf);
             final UpdateLedgerOp updateLedgerOp = new UpdateLedgerOp(bk, admin);
-            final ServerConfiguration serverConf = new ServerConfiguration(bkConf);
-            final BookieSocketAddress newBookieId = Bookie.getBookieAddress(serverConf);
-            serverConf.setUseHostNameAsBookieID(!useHostName);
-            final BookieSocketAddress oldBookieId = Bookie.getBookieAddress(serverConf);
 
             UpdateLedgerNotifier progressable = new UpdateLedgerNotifier() {
                 long lastReport = System.nanoTime();
@@ -2363,7 +2363,7 @@ public class BookieShell implements Tool {
                 }
             };
             try {
-                updateLedgerOp.updateBookieIdInLedgers(oldBookieId, newBookieId, rate, limit, progressable);
+                updateLedgerOp.updateBookieIdInLedgers(srcBookieAddress, destBookieAddress, rate, limit, progressable);
             } catch (IOException e) {
                 LOG.error("Failed to update ledger metadata", e);
                 return -1;
@@ -2868,6 +2868,7 @@ public class BookieShell implements Tool {
         commands.put(CMD_LISTFILESONDISC, new ListDiskFilesCmd());
         commands.put(CMD_UPDATECOOKIE, new UpdateCookieCmd());
         commands.put(CMD_UPDATELEDGER, new UpdateLedgerCmd());
+        commands.put(CMD_UPDATE_BOOKIE_IN_LEDGER, new UpdateBookieInLedgerCmd());
         commands.put(CMD_DELETELEDGER, new DeleteLedgerCmd());
         commands.put(CMD_BOOKIEINFO, new BookieInfoCmd());
         commands.put(CMD_DECOMMISSIONBOOKIE, new DecommissionBookieCmd());
