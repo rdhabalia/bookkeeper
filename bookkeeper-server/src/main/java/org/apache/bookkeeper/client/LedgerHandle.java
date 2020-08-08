@@ -141,6 +141,7 @@ public class LedgerHandle implements WriteHandle {
     final DistributionSchedule distributionSchedule;
     final RateLimiter throttler;
     final LoadingCache<BookieSocketAddress, Long> bookieFailureHistory;
+    final LoadingCache<BookieSocketAddress, Boolean> bookieUnavailableFailure;
     final BookiesHealthInfo bookiesHealthInfo;
     final EnumSet<WriteFlag> writeFlags;
 
@@ -228,6 +229,14 @@ public class LedgerHandle implements WriteHandle {
                 return -1L;
             }
         });
+        this.bookieUnavailableFailure = CacheBuilder.newBuilder()
+            .expireAfterWrite(clientCtx.getConf().bookieFailureHistoryExpirationMSec, TimeUnit.MILLISECONDS)
+            .build(new CacheLoader<BookieSocketAddress, Boolean>() {
+            @Override
+            public Boolean load(BookieSocketAddress key) {
+                return false;
+            }
+        });
         this.bookiesHealthInfo = new BookiesHealthInfo() {
             @Override
             public long getBookieFailureHistory(BookieSocketAddress bookieSocketAddress) {
@@ -313,6 +322,15 @@ public class LedgerHandle implements WriteHandle {
     @Override
     public long getId() {
         return ledgerId;
+    }
+
+    /**
+     * Get cache that stores unavailable bookie failures.
+     *
+     * @return unavailable bookie cache.
+     */
+    public LoadingCache<BookieSocketAddress, Boolean> getBookieUnavailableFailure() {
+        return bookieUnavailableFailure;
     }
 
     @VisibleForTesting

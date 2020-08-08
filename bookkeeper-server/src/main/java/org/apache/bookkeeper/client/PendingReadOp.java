@@ -387,31 +387,41 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
         }
 
         synchronized BookieSocketAddress sendNextRead() {
-            if (nextReplicaIndexToReadFrom >= getLedgerMetadata().getWriteQuorumSize()) {
-                // we are done, the read has failed from all replicas, just fail the
-                // read
-                fail(firstError);
-                return null;
-            }
+            for (int j = 0; j < getLedgerMetadata().getWriteQuorumSize(); j++) {
+                if (nextReplicaIndexToReadFrom >= getLedgerMetadata().getWriteQuorumSize()) {
+                    // we are done, the read has failed from all replicas, just
+                    // fail the
+                    // read
+                    fail(firstError);
+                    return null;
+                }
 
-            // ToDo: pick replica with writable PCBC. ISSUE #1239
-            // https://github.com/apache/bookkeeper/issues/1239
-            int replica = nextReplicaIndexToReadFrom;
-            int bookieIndex = writeSet.get(nextReplicaIndexToReadFrom);
-            nextReplicaIndexToReadFrom++;
+                // ToDo: pick replica with writable PCBC. ISSUE #1239
+                // https://github.com/apache/bookkeeper/issues/1239
+                int replica = nextReplicaIndexToReadFrom;
+                int bookieIndex = writeSet.get(nextReplicaIndexToReadFrom);
+                nextReplicaIndexToReadFrom++;
 
-            try {
-                BookieSocketAddress to = ensemble.get(bookieIndex);
-                sendReadTo(bookieIndex, to, this);
-                sentToHosts.add(to);
-                sentReplicas.set(replica);
-                return to;
-            } catch (InterruptedException ie) {
-                LOG.error("Interrupted reading entry " + this, ie);
-                Thread.currentThread().interrupt();
-                fail(BKException.Code.InterruptedException);
-                return null;
+                try {
+                    BookieSocketAddress to = ensemble.get(bookieIndex);
+                    Boolean bookieUnavailable = lh.getBookieUnavailableFailure().getIfPresent(to);
+                    sentToHosts.add(to);
+                    sentReplicas.set(replica);
+                    if (bookieUnavailable != null && bookieUnavailable) {
+                        continue;
+                    } else {
+                        sendReadTo(bookieIndex, to, this);
+                        return to;
+                    }
+                } catch (InterruptedException ie) {
+                    LOG.error("Interrupted reading entry " + this, ie);
+                    Thread.currentThread().interrupt();
+                    fail(BKException.Code.InterruptedException);
+                    return null;
+                }
             }
+            fail(firstError);
+            return null;
         }
 
         @Override
@@ -422,6 +432,9 @@ class PendingReadOp implements ReadEntryCallback, SafeRunnable {
             if (replica == NOT_FOUND) {
                 LOG.error("Received error from a host which is not in the ensemble {} {}.", host, ensemble);
                 return;
+            }
+            if (BKException.Code.BookieHandleNotAvailableException == rc) {
+                lh.getBookieUnavailableFailure().put(host, true);
             }
             erroredReplicas.set(replica);
 
