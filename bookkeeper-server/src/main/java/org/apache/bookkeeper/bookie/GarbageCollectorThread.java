@@ -127,17 +127,17 @@ public class GarbageCollectorThread extends SafeRunnable {
     }
 
     private EntryLogMetadataMap createEntryLogMetadataMap() throws IOException {
-        String baseDir = null;
-        try {
-            if (conf.isGcEntryLogMetadataCacheEnabled()) {
-                baseDir = this.conf.getGcEntryLogMetadataCachePath();
+        if (conf.isGcEntryLogMetadataCacheEnabled()) {
+            String baseDir = this.conf.getGcEntryLogMetadataCachePath();
+            try {
                 return new PersistentEntryLogMetadataMap(baseDir, conf);
+            } catch (IOException e) {
+                LOG.error("Failed to initialize persistent-metadata-map , clean up {}", baseDir, e);
+                throw e;
             }
-        } catch (IOException e) {
-            LOG.error("Failed to initialize persistent-metadata-map , clean up {}", baseDir, e);
-            throw e;
+        } else {
+            return new InMemoryEntryLogMetadataMap();
         }
-        return new InMemoryEntryLogMetadataMap();
     }
 
     /**
